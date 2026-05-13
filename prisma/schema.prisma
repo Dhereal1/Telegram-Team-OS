@@ -93,6 +93,8 @@ model User {
   checkins      DailyCheckin[]
   streaks       HabitStreak[]
   templateInstalls TemplateInstall[] @relation("TemplateInstalledBy")
+
+  memoryEntries OperationalMemoryEntry[]
 }
 
 model Team {
@@ -144,6 +146,10 @@ model Team {
   checkins      DailyCheckin[]
   streaks       HabitStreak[]
   templateInstalls TemplateInstall[]
+
+  memoryEntries OperationalMemoryEntry[]
+  snapshots     OperationalSnapshot[]
+  warehouseDaily WarehouseEventDaily[]
 
   @@index([createdByUserId])
   @@index([planTier])
@@ -838,4 +844,104 @@ model TemplateInstall {
 
   @@unique([teamId, templateId])
   @@index([teamId, createdAt])
+}
+
+// ----------------------------
+// Phase 6 foundations
+// ----------------------------
+
+enum MemoryType {
+  NOTE
+  DECISION
+  PROCEDURE
+  INCIDENT
+}
+
+model OperationalMemoryEntry {
+  id        String     @id @default(cuid())
+  teamId    String
+  type      MemoryType @default(NOTE)
+  title     String
+  body      String
+  tags      String[]
+  pinned    Boolean    @default(false)
+  createdById String?
+  source    String? // e.g. "miniapp", "telegram"
+  metadata  Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  createdBy User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([teamId, createdAt])
+  @@index([teamId, type, createdAt])
+  @@index([pinned, createdAt])
+}
+
+model OperationalSnapshot {
+  id        String   @id @default(cuid())
+  teamId    String
+  dateKey   String   // YYYY-MM-DD (UTC)
+  // Denormalized JSON: dashboard stats, key risks, etc.
+  payload   Json
+  createdAt DateTime @default(now())
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, dateKey])
+  @@index([teamId, createdAt])
+}
+
+model WarehouseEventDaily {
+  id        String   @id @default(cuid())
+  teamId    String
+  dateKey   String // YYYY-MM-DD (UTC)
+  // event namespace, e.g. "teamos", "crm"
+  namespace String
+  eventName String
+  count     Int      @default(0)
+  // lightweight example payload hashes/ids for debugging (optional)
+  sample    Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, dateKey, namespace, eventName])
+  @@index([teamId, dateKey])
+  @@index([namespace, eventName, dateKey])
+}
+
+enum GovernanceStatus {
+  ACTIVE
+  DEPRECATED
+}
+
+model EventSchemaRegistry {
+  id        String   @id @default(cuid())
+  name      String   // "teamos.task.created"
+  version   Int
+  schemaKey String
+  jsonSchema Json
+  status    GovernanceStatus @default(ACTIVE)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([name, version])
+  @@index([schemaKey])
+}
+
+model ServiceOwnership {
+  id        String   @id @default(cuid())
+  serviceId String   // e.g. "teamos.core"
+  owner     String   // e.g. "platform", "ops", "growth"
+  slackChannel String?
+  status    GovernanceStatus @default(ACTIVE)
+  metadata  Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([serviceId])
 }

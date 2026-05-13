@@ -12,6 +12,7 @@ import { scanMissedReports, scanOverdueTasks } from "@/modules/automation/cron-j
 import { generateDailyTeamInsights, maybeNotifyFounderDigest } from "@/modules/intelligence/intelligence.service";
 import { prisma } from "@/lib/db/prisma";
 import { enqueueTelegramNotification } from "@/modules/notifications/notifications.service";
+import { aggregateDomainEventsDaily, writeOperationalSnapshot } from "@/modules/warehouse/warehouse.service";
 
 // Domain events -> in-process listeners + workflows
 createWorker("domain-events", async (job) => {
@@ -125,6 +126,14 @@ createWorker("cron", async (job) => {
     }
     return;
   }
+  if (j.name === "warehouse-daily") {
+    await aggregateDomainEventsDaily({});
+    const teams = await prisma.team.findMany({ select: { id: true }, take: 1000 });
+    for (const t of teams) {
+      await writeOperationalSnapshot(t.id, {}).catch(() => {});
+    }
+    return;
+  }
 });
 
 // Ensure repeatable cron jobs exist when BullMQ is enabled.
@@ -149,5 +158,10 @@ if (cronQueue) {
     "habit-reminders",
     {},
     { repeat: { every: 4 * 60 * 60 * 1000 }, jobId: "cron:habit-reminders", removeOnComplete: 10, removeOnFail: 50 },
+  );
+  void cronQueue.add(
+    "warehouse-daily",
+    {},
+    { repeat: { every: 24 * 60 * 60 * 1000 }, jobId: "cron:warehouse-daily", removeOnComplete: 5, removeOnFail: 50 },
   );
 }
