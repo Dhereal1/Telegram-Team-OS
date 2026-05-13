@@ -99,6 +99,11 @@ model User {
   approvalsCreated ApprovalRequest[] @relation("ApprovalCreatedBy")
   approvalsDecided ApprovalRequest[] @relation("ApprovalDecidedBy")
   securityEvents   SecurityEvent[]
+  apiKeysActingFor WorkspaceAppApiKey[] @relation("ApiKeyActor")
+  orchestrationSuggestionsCreated OrchestrationSuggestion[] @relation("OrchCreatedBy")
+  orchestrationSuggestionsDecided OrchestrationSuggestion[] @relation("OrchDecidedBy")
+  predictionSignals PredictionSignal[] @relation("PredictionUser")
+  simulationsCreated SimulationRun[] @relation("SimulationCreatedBy")
 }
 
 model Team {
@@ -158,6 +163,12 @@ model Team {
   securityEvents SecurityEvent[]
   policies       Policy[]
   approvals      ApprovalRequest[]
+  apiUsageDaily  ApiUsageDaily[]
+  orchestrationSuggestions OrchestrationSuggestion[]
+  explainabilityLogs ExplainabilityLog[]
+  predictionSignals PredictionSignal[]
+  riskSignals RiskSignal[]
+  simulations SimulationRun[]
 
   @@index([createdByUserId])
   @@index([planTier])
@@ -440,9 +451,131 @@ model WorkspaceAppInstall {
   team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
   app  PlatformApp @relation(fields: [appId], references: [id], onDelete: Cascade)
 
+  apiKeys              WorkspaceAppApiKey[]
+  webhookSubscriptions WebhookSubscription[]
+
   @@unique([teamId, appId])
   @@index([teamId, status])
   @@index([appId, status])
+}
+
+enum ApiKeyStatus {
+  ACTIVE
+  REVOKED
+}
+
+// Phase 8 — workspace-install scoped public API keys.
+// Keys are created for a specific installed app within a workspace.
+model WorkspaceAppApiKey {
+  id        String       @id @default(cuid())
+  installId String
+  name      String
+
+  // Stored secret format: "teamos_sk_<prefix>_<secret>" (secret never stored).
+  prefix    String
+  hash      String
+  scopes    Json
+  status    ApiKeyStatus @default(ACTIVE)
+
+  // Optional: user identity used as the "actor" for writes originating from this key.
+  actorUserId String?
+
+  lastUsedAt DateTime?
+  expiresAt  DateTime?
+  revokedAt  DateTime?
+
+  createdAt DateTime @default(now())
+
+  install WorkspaceAppInstall @relation(fields: [installId], references: [id], onDelete: Cascade)
+  actor   User?              @relation("ApiKeyActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  usageDaily ApiUsageDaily[]
+
+  @@unique([prefix])
+  @@index([installId, status])
+  @@index([installId, createdAt])
+}
+
+// Phase 8 — aggregate daily usage per API key (analytics + quotas).
+model ApiUsageDaily {
+  id        String   @id @default(cuid())
+  dateKey   String   // YYYY-MM-DD UTC
+  teamId    String
+  apiKeyId  String
+  requests  Int      @default(0)
+  errors    Int      @default(0)
+  lastRequestAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  team   Team               @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  apiKey WorkspaceAppApiKey @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+
+  @@unique([dateKey, apiKeyId])
+  @@index([teamId, dateKey])
+  @@index([apiKeyId, dateKey])
+}
+
+enum WebhookSubscriptionStatus {
+  ACTIVE
+  PAUSED
+  DISABLED
+}
+
+// Phase 8 — external webhook subscriptions (owned by a workspace app install).
+model WebhookSubscription {
+  id        String                   @id @default(cuid())
+  installId String
+  url       String
+  // HMAC secret used for request signing.
+  secret    String
+  status    WebhookSubscriptionStatus @default(ACTIVE)
+  // Allowed event names (JSON string[]). Filtering is exact-match for Phase 8.
+  events    Json
+
+  lastDeliveredAt DateTime?
+  lastError       String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  install   WorkspaceAppInstall @relation(fields: [installId], references: [id], onDelete: Cascade)
+  deliveries WebhookDelivery[]
+
+  @@unique([installId, url])
+  @@index([installId, status])
+  @@index([status, updatedAt])
+}
+
+enum WebhookDeliveryStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  DEAD_LETTER
+}
+
+// Phase 8 — durable webhook deliveries with replay support.
+model WebhookDelivery {
+  id             String               @id @default(cuid())
+  subscriptionId String
+  // DomainEvent id (replayable audit reference)
+  eventId        String
+  eventName      String
+
+  attempt        Int                  @default(0)
+  status         WebhookDeliveryStatus @default(PENDING)
+
+  responseCode   Int?
+  error          String?
+  deliveredAt    DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  subscription WebhookSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([subscriptionId, status, createdAt])
+  @@index([eventId, createdAt])
 }
 
 model PlatformServiceRegistration {
@@ -642,11 +775,21 @@ enum InsightSeverity {
   CRITICAL
 }
 
+enum InsightKind {
+  OPERATIONAL
+  STRATEGIC
+  PREDICTION
+  RISK
+  ORCHESTRATION
+  SIMULATION
+}
+
 model OperationalInsight {
   id            String         @id @default(cuid())
   teamId        String
   // e.g. "bottleneck.blocked_tasks", "risk.missed_reports", "workload.imbalance"
   key           String
+  kind          InsightKind    @default(OPERATIONAL)
   status        InsightStatus  @default(OPEN)
   severity      InsightSeverity @default(INFO)
   score         Int            @default(0) // 0-100
@@ -655,11 +798,14 @@ model OperationalInsight {
   recommendation String?
   evidence      Json?
   dedupeKey     String?
+  // Optional explainability record for AI-assisted recommendations.
+  explainLogId  String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  explainLog ExplainabilityLog? @relation(fields: [explainLogId], references: [id], onDelete: SetNull)
 
   @@index([teamId, createdAt])
   @@index([teamId, key, createdAt])
@@ -687,6 +833,176 @@ model InsightRun {
 
   @@index([teamId, startedAt])
   @@index([status, startedAt])
+}
+
+// ----------------------------
+// Phase 9 foundations
+// ----------------------------
+
+enum ExplainabilityKind {
+  RECOMMENDATION
+  PREDICTION
+  RISK
+  ORCHESTRATION
+  SIMULATION
+}
+
+model ExplainabilityLog {
+  id        String             @id @default(cuid())
+  teamId    String
+  kind      ExplainabilityKind
+  // "heuristic" or provider id (e.g. "openai", "ollama", "stub")
+  engine    String
+  model     String?
+  // Stable hash for dedupe/caching
+  inputHash String?
+  // The explainable chain: inputs, steps, features, outputs, confidence.
+  trace     Json
+  createdAt DateTime @default(now())
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  insights OperationalInsight[]
+  predictionSignals PredictionSignal[]
+  riskSignals RiskSignal[]
+  simulations SimulationRun[]
+
+  @@index([teamId, createdAt])
+  @@index([teamId, kind, createdAt])
+}
+
+enum OrchestrationSuggestionStatus {
+  PROPOSED
+  APPROVED
+  REJECTED
+  EXECUTED
+  CANCELED
+}
+
+model OrchestrationSuggestion {
+  id        String   @id @default(cuid())
+  teamId    String
+  // Suggested action type, e.g. "workflow.run", "task.rebalance"
+  type      String
+  // Human-readable summary for Telegram UI
+  title     String
+  summary   String
+  // Machine-readable payload for execution (only after approval)
+  payload   Json
+  // When true, execution must go through ApprovalRequest workflow.
+  requiresApproval Boolean @default(true)
+  status    OrchestrationSuggestionStatus @default(PROPOSED)
+
+  createdByUserId String?
+  decidedByUserId String?
+  decidedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  createdBy User? @relation("OrchCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  decidedBy User? @relation("OrchDecidedBy", fields: [decidedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([teamId, status, createdAt])
+  @@index([teamId, type, createdAt])
+}
+
+enum SimulationRunStatus {
+  RUNNING
+  SUCCEEDED
+  FAILED
+  CANCELED
+}
+
+model SimulationRun {
+  id        String             @id @default(cuid())
+  teamId    String
+  // e.g. "workflow.forecast", "scenario.capacity"
+  type      String
+  status    SimulationRunStatus @default(RUNNING)
+  inputs    Json
+  results   Json?
+  lastError String?
+  explainLogId String?
+
+  createdByUserId String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  finishedAt DateTime?
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  createdBy User? @relation("SimulationCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  explainLog ExplainabilityLog? @relation(fields: [explainLogId], references: [id], onDelete: SetNull)
+
+  @@index([teamId, status, createdAt])
+  @@index([teamId, type, createdAt])
+}
+
+enum PredictionKind {
+  WORKFLOW_DELAY
+  BURNOUT_RISK
+  OVERLOAD
+  ESCALATION_PROBABILITY
+  RECURRING_FAILURE
+}
+
+model PredictionSignal {
+  id        String         @id @default(cuid())
+  teamId    String
+  kind      PredictionKind
+  // Optional entity references for traceability.
+  userId    String?
+  workflowId String?
+  taskId    String?
+
+  // 0..1 probability, plus optional numeric forecast.
+  probability Float
+  forecastValue Float?
+  horizonDays Int
+  confidence  Float? // 0..1
+
+  factors Json?
+  explainLogId String?
+
+  createdAt DateTime @default(now())
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User? @relation("PredictionUser", fields: [userId], references: [id], onDelete: SetNull)
+  explainLog ExplainabilityLog? @relation(fields: [explainLogId], references: [id], onDelete: SetNull)
+
+  @@index([teamId, kind, createdAt])
+  @@index([userId, createdAt])
+  @@index([workflowId, createdAt])
+  @@index([taskId, createdAt])
+}
+
+enum RiskSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+model RiskSignal {
+  id        String       @id @default(cuid())
+  teamId    String
+  // e.g. "key_person_risk", "dependency_fragility"
+  type      String
+  severity  RiskSeverity @default(LOW)
+  title     String
+  summary   String
+  mitigation String?
+  evidence  Json?
+  explainLogId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  explainLog ExplainabilityLog? @relation(fields: [explainLogId], references: [id], onDelete: SetNull)
+
+  @@index([teamId, severity, createdAt])
+  @@index([teamId, type, createdAt])
 }
 
 enum GraphEdgeType {

@@ -13,6 +13,31 @@ import { generateDailyTeamInsights, maybeNotifyFounderDigest } from "@/modules/i
 import { prisma } from "@/lib/db/prisma";
 import { enqueueTelegramNotification } from "@/modules/notifications/notifications.service";
 import { aggregateDomainEventsDaily, writeOperationalSnapshot } from "@/modules/warehouse/warehouse.service";
+import { enqueueWebhooksForDomainEvent } from "@/webhooks/webhooks.service";
+import { deliverWebhook } from "@/webhooks/deliver-webhook";
+import { generateStrategicTeamInsights } from "@/modules/intelligence/strategic-intelligence.service";
+import { generateTeamPredictionSignals } from "@/modules/prediction/prediction.service";
+import { generateTeamRiskSignals } from "@/modules/risk/risk.service";
+import { generateOrchestrationSuggestions } from "@/modules/orchestration/orchestration.service";
+
+// Phase 10: fan-out heavy insight generation work into its own queue for better throughput and failure isolation.
+const intelligenceWorker = createWorker(
+  "intelligence",
+  async (job) => {
+    const j = job as Job;
+    const teamId = (j.data as { teamId?: string }).teamId;
+    if (!teamId) return;
+
+    // Each generator is isolated so a single failure doesn't block the rest.
+    await generateDailyTeamInsights(teamId);
+    await generateStrategicTeamInsights(teamId).catch(() => {});
+    await generateTeamPredictionSignals(teamId).catch(() => {});
+    await generateTeamRiskSignals(teamId).catch(() => {});
+    await generateOrchestrationSuggestions(teamId).catch(() => {});
+    await maybeNotifyFounderDigest(teamId).catch(() => {});
+  },
+  { concurrency: 5 },
+);
 
 // Domain events -> in-process listeners + workflows
 const domainEventsWorker = createWorker("domain-events", async (job) => {
@@ -46,6 +71,9 @@ const domainEventsWorker = createWorker("domain-events", async (job) => {
       });
     }
 
+    // 3) external webhooks (controlled allowlist; durable when BullMQ enabled)
+    await enqueueWebhooksForDomainEvent({ teamId: evt.teamId, eventId: evt.id, eventName: evt.name });
+
     await markDomainEventStatus({ id: evt.id, status: "SUCCEEDED", processedAt: new Date(), lastError: null }).catch(() => {});
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : "Domain event failed";
@@ -78,13 +106,23 @@ const notificationsWorker = createWorker("notifications", async (job) => {
   }
 });
 
+// External webhooks delivery (Phase 8)
+const webhooksWorker = createWorker("webhooks", async (job) => {
+  const j = job as Job;
+  const deliveryId = (j.data as { deliveryId?: string }).deliveryId;
+  if (!deliveryId) return;
+  await deliverWebhook(deliveryId, { attempt: j.attemptsMade + 1, maxAttempts: j.opts.attempts ?? 1 });
+});
+
 // Keep process alive when workers are enabled.
 process.on("SIGINT", () => process.exit(0));
 process.on("SIGTERM", () => process.exit(0));
 
 console.log("[worker] started", {
+  intelligence: Boolean(intelligenceWorker),
   domainEvents: Boolean(domainEventsWorker),
   notifications: Boolean(notificationsWorker),
+  webhooks: Boolean(webhooksWorker),
 });
 
 // Cron worker: lightweight periodic scans (Phase 2 accountability foundations).
@@ -99,10 +137,22 @@ const cronWorker = createWorker("cron", async (job) => {
     return;
   }
   if (j.name === "generate-insights") {
+    const queue = getQueue("intelligence");
+    if (!queue) return;
     const teams = await prisma.team.findMany({ select: { id: true }, take: 500 });
     for (const t of teams) {
-      await generateDailyTeamInsights(t.id);
-      await maybeNotifyFounderDigest(t.id).catch(() => {});
+      // Phase 10: enqueue one job per team (retryable, observable, isolated).
+      void queue.add(
+        "team-insights",
+        { teamId: t.id },
+        {
+          jobId: `intelligence:${t.id}`,
+          attempts: 3,
+          backoff: { type: "exponential", delay: 10_000 },
+          removeOnComplete: 5000,
+          removeOnFail: 20000,
+        },
+      );
     }
     return;
   }

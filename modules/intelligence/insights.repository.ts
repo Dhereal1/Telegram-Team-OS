@@ -27,35 +27,41 @@ export async function upsertInsight(input: {
   teamId: string;
   key: string;
   dedupeKey: string;
+  kind?: "OPERATIONAL" | "STRATEGIC" | "PREDICTION" | "RISK" | "ORCHESTRATION" | "SIMULATION";
   severity: InsightSeverity;
   score: number;
   title: string;
   summary: string;
   recommendation?: string | null;
   evidence?: Prisma.InputJsonValue | null;
+  explainLogId?: string | null;
 }) {
   const score = Math.max(0, Math.min(100, Math.round(input.score)));
   return prisma.operationalInsight.upsert({
     where: { teamId_key_dedupeKey: { teamId: input.teamId, key: input.key, dedupeKey: input.dedupeKey } },
     update: {
+      kind: input.kind ?? undefined,
       severity: input.severity,
       score,
       title: input.title,
       summary: input.summary,
       recommendation: input.recommendation ?? undefined,
       evidence: input.evidence ?? undefined,
+      explainLogId: input.explainLogId ?? undefined,
       status: "OPEN",
     },
     create: {
       teamId: input.teamId,
       key: input.key,
       dedupeKey: input.dedupeKey,
+      kind: (input.kind ?? "OPERATIONAL") as never,
       severity: input.severity,
       score,
       title: input.title,
       summary: input.summary,
       recommendation: input.recommendation ?? undefined,
       evidence: input.evidence ?? undefined,
+      explainLogId: input.explainLogId ?? undefined,
       status: "OPEN",
     },
     select: { id: true, key: true, severity: true, score: true, createdAt: true, updatedAt: true },
@@ -78,4 +84,3 @@ export async function setInsightStatus(input: { teamId: string; insightId: strin
     select: { id: true, status: true },
   });
 }
-

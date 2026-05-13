@@ -13,6 +13,10 @@ export const env = createEnv({
     REDIS_QUEUE_PREFIX: z.string().min(1).optional(),
     UPSTASH_REDIS_REST_URL: z.string().optional(),
     UPSTASH_REDIS_REST_TOKEN: z.string().optional(),
+    // Phase 8: public API key hashing pepper (recommended in production).
+    PUBLIC_API_KEY_PEPPER: z.string().optional(),
+    // Phase 10: daily request quota for public API keys (soft-launch default is conservative).
+    PUBLIC_API_DAILY_REQUEST_QUOTA: z.coerce.number().int().positive().optional(),
     AI_PROVIDER: z
       .enum(["stub", "openai", "anthropic", "google", "xai"])
       .default("stub"),
@@ -27,6 +31,8 @@ export const env = createEnv({
     REDIS_QUEUE_PREFIX: process.env.REDIS_QUEUE_PREFIX,
     UPSTASH_REDIS_REST_URL: process.env.UPSTASH_REDIS_REST_URL,
     UPSTASH_REDIS_REST_TOKEN: process.env.UPSTASH_REDIS_REST_TOKEN,
+    PUBLIC_API_KEY_PEPPER: process.env.PUBLIC_API_KEY_PEPPER,
+    PUBLIC_API_DAILY_REQUEST_QUOTA: process.env.PUBLIC_API_DAILY_REQUEST_QUOTA,
     AI_PROVIDER: process.env.AI_PROVIDER,
     AI_API_KEY: process.env.AI_API_KEY,
   },

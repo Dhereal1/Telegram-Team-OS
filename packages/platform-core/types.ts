@@ -9,7 +9,16 @@ export const appManifestSchema = z.object({
   description: z.string().max(500).optional(),
   capabilities: z.array(capabilityKeySchema).default([]),
   requiredGrants: z.array(capabilityKeySchema).default([]),
-});
+  // Phase 8+: optional app classification for governance (no marketplace semantics).
+  kind: z.enum(["core", "integration", "developer"]).optional(),
+  integration: z
+    .object({
+      provider: z.string().min(2).max(60),
+      auth: z.enum(["api_key", "oauth", "webhook_only"]).optional(),
+      docsUrl: z.string().url().optional(),
+    })
+    .optional(),
+}).passthrough();
 
 export type AppManifest = z.infer<typeof appManifestSchema>;
 
@@ -19,4 +28,3 @@ export type PlatformContext = {
   roleKey: "FOUNDER" | "ADMIN" | "STAFF";
   installedApps: Array<{ key: string; grants: string[]; status: "ENABLED" | "DISABLED" }>;
 };
-

@@ -1,0 +1,12 @@
+import "@/modules/bootstrap/server";
+
+import { withApi, jsonErr } from "@/packages/validation/api";
+
+export const dynamic = "force-dynamic";
+
+// Phase 8: OAuth foundations placeholder.
+// OAuth is not enabled by default; API keys remain the primary controlled mechanism.
+export const GET = withApi(async () => {
+  return jsonErr("OAuth not enabled", { status: 501, code: "NOT_IMPLEMENTED" });
+});
+

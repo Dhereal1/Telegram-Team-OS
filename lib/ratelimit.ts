@@ -4,7 +4,7 @@ import { Ratelimit } from "@upstash/ratelimit";
 import { redis } from "@/lib/redis/redis";
 import { HttpError } from "@/lib/utils/api";
 
-type RateLimitPreset = "auth" | "webhook" | "mutation";
+type RateLimitPreset = "auth" | "webhook" | "mutation" | "public_api" | "intelligence";
 
 function clientIpFromRequest(request: Request) {
   const xf = request.headers.get("x-forwarded-for");
@@ -24,7 +24,11 @@ function getLimiter(preset: RateLimitPreset) {
       ? new Ratelimit({ redis, limiter: Ratelimit.fixedWindow(10, "1 m") })
       : preset === "webhook"
         ? new Ratelimit({ redis, limiter: Ratelimit.fixedWindow(120, "1 m") })
-        : new Ratelimit({ redis, limiter: Ratelimit.fixedWindow(60, "1 m") });
+        : preset === "public_api"
+          ? new Ratelimit({ redis, limiter: Ratelimit.fixedWindow(600, "1 m") })
+          : preset === "intelligence"
+            ? new Ratelimit({ redis, limiter: Ratelimit.fixedWindow(40, "1 m") })
+          : new Ratelimit({ redis, limiter: Ratelimit.fixedWindow(60, "1 m") });
 
   limiters[preset] = limiter;
   return limiter;
