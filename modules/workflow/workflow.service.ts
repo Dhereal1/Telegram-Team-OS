@@ -3,6 +3,8 @@ import "server-only";
 import { workflowDefinitionSchema } from "@/modules/workflow/workflow.types";
 import * as repo from "@/modules/workflow/workflow.repository";
 import { enqueueTelegramNotification } from "@/modules/notifications/notifications.service";
+import { evaluatePolicy } from "@/modules/governance/policy.service";
+import { getApprovalDecision, requestApproval } from "@/modules/governance/approvals.service";
 
 function getByPath(obj: unknown, path: string) {
   const parts = path.split(".").filter(Boolean);
@@ -27,6 +29,7 @@ export async function runWorkflowsForEvent(input: {
   eventId?: string | null;
   eventName: string;
   payload: Record<string, unknown>;
+  actorId?: string | null;
 }) {
   const candidates = await repo.listActiveWorkflowVersionsByEvent(input.teamId, input.eventName);
   const results: Array<{ workflowId: string; executionId: string; status: "SUCCEEDED" | "FAILED" }> = [];
@@ -62,6 +65,38 @@ export async function runWorkflowsForEvent(input: {
 
       for (const action of def.data.actions) {
         if (action.type === "telegram_notify") {
+          const actorId = input.actorId ?? (typeof input.payload.actorId === "string" ? (input.payload.actorId as string) : null);
+          if (actorId) {
+            const decision = await evaluatePolicy({
+              teamId: input.teamId,
+              userId: actorId,
+              key: "workflow.telegram_notify",
+              context: { workflowId: row.workflow.id, eventName: input.eventName },
+            });
+            if (!decision.ok) {
+              if (decision.requiresApproval) {
+                const existing = await getApprovalDecision(input.teamId, "WorkflowExecution", execution.id, "telegram_notify");
+                if (!existing) {
+                  await requestApproval({
+                    teamId: input.teamId,
+                    createdById: actorId,
+                    entityType: "WorkflowExecution",
+                    entityId: execution.id,
+                    actionKey: "telegram_notify",
+                    reason: decision.reason,
+                    payload: { eventName: input.eventName, workflowId: row.workflow.id },
+                  });
+                  await repo.appendExecutionLog({ executionId: execution.id, level: "warn", message: "Approval required before telegram_notify" });
+                } else if (existing.status !== "APPROVED") {
+                  await repo.appendExecutionLog({ executionId: execution.id, level: "warn", message: "telegram_notify blocked by approval decision" });
+                  continue;
+                }
+              } else {
+                await repo.appendExecutionLog({ executionId: execution.id, level: "warn", message: "telegram_notify denied by policy" });
+                continue;
+              }
+            }
+          }
           const chatId = getByPath(ctx, `event.${action.chatIdPath}`);
           if (!chatId) {
             await repo.appendExecutionLog({ executionId: execution.id, level: "warn", message: "Missing chatId for telegram_notify", metadata: { chatIdPath: action.chatIdPath } });

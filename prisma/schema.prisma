@@ -95,6 +95,10 @@ model User {
   templateInstalls TemplateInstall[] @relation("TemplateInstalledBy")
 
   memoryEntries OperationalMemoryEntry[]
+
+  approvalsCreated ApprovalRequest[] @relation("ApprovalCreatedBy")
+  approvalsDecided ApprovalRequest[] @relation("ApprovalDecidedBy")
+  securityEvents   SecurityEvent[]
 }
 
 model Team {
@@ -150,6 +154,10 @@ model Team {
   memoryEntries OperationalMemoryEntry[]
   snapshots     OperationalSnapshot[]
   warehouseDaily WarehouseEventDaily[]
+
+  securityEvents SecurityEvent[]
+  policies       Policy[]
+  approvals      ApprovalRequest[]
 
   @@index([createdByUserId])
   @@index([planTier])
@@ -944,4 +952,86 @@ model ServiceOwnership {
   updatedAt DateTime @updatedAt
 
   @@unique([serviceId])
+}
+
+// ----------------------------
+// Phase 7 foundations
+// ----------------------------
+
+enum SecuritySeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+model SecurityEvent {
+  id        String          @id @default(cuid())
+  teamId    String?
+  userId    String?
+  severity  SecuritySeverity @default(INFO)
+  type      String          // e.g. "policy.denied", "session.anomaly", "approval.requested"
+  message   String
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  team Team? @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([teamId, createdAt])
+  @@index([userId, createdAt])
+  @@index([type, createdAt])
+}
+
+enum PolicyStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model Policy {
+  id        String      @id @default(cuid())
+  teamId    String
+  key       String      // e.g. "workflow.telegram_notify.requires_approval"
+  status    PolicyStatus @default(ACTIVE)
+  // JSON policy definition (matchers + effect)
+  definition Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, key])
+  @@index([teamId, status])
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELED
+}
+
+model ApprovalRequest {
+  id        String         @id @default(cuid())
+  teamId    String
+  createdById String
+  status    ApprovalStatus @default(PENDING)
+  // What is being approved
+  entityType String        // e.g. "WorkflowExecution"
+  entityId   String
+  actionKey  String        // e.g. "telegram_notify"
+  reason     String?
+  payload    Json?
+  decidedById String?
+  decidedAt  DateTime?
+  decisionNote String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  createdBy User @relation("ApprovalCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+  decidedBy User? @relation("ApprovalDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
+
+  @@index([teamId, status, createdAt])
+  @@index([entityType, entityId])
 }

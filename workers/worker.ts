@@ -15,7 +15,7 @@ import { enqueueTelegramNotification } from "@/modules/notifications/notificatio
 import { aggregateDomainEventsDaily, writeOperationalSnapshot } from "@/modules/warehouse/warehouse.service";
 
 // Domain events -> in-process listeners + workflows
-createWorker("domain-events", async (job) => {
+const domainEventsWorker = createWorker("domain-events", async (job) => {
   const j = job as Job;
   const eventId = (j.data as { eventId?: string }).eventId;
   if (!eventId) return;
@@ -37,6 +37,12 @@ createWorker("domain-events", async (job) => {
         eventId: evt.id,
         eventName: evt.name,
         payload: (typeof payload === "object" && payload ? (payload as Record<string, unknown>) : {}),
+        actorId:
+          typeof payload === "object" &&
+          payload !== null &&
+          typeof (payload as Record<string, unknown>)["actorId"] === "string"
+            ? ((payload as Record<string, unknown>)["actorId"] as string)
+            : null,
       });
     }
 
@@ -49,7 +55,7 @@ createWorker("domain-events", async (job) => {
 });
 
 // Notifications delivery
-createWorker("notifications", async (job) => {
+const notificationsWorker = createWorker("notifications", async (job) => {
   const j = job as Job;
   const notificationId = (j.data as { notificationId?: string }).notificationId;
   if (!notificationId) return;
@@ -76,10 +82,13 @@ createWorker("notifications", async (job) => {
 process.on("SIGINT", () => process.exit(0));
 process.on("SIGTERM", () => process.exit(0));
 
-console.log("[worker] started");
+console.log("[worker] started", {
+  domainEvents: Boolean(domainEventsWorker),
+  notifications: Boolean(notificationsWorker),
+});
 
 // Cron worker: lightweight periodic scans (Phase 2 accountability foundations).
-createWorker("cron", async (job) => {
+const cronWorker = createWorker("cron", async (job) => {
   const j = job as Job;
   if (j.name === "scan-overdue") {
     await scanOverdueTasks();
@@ -136,9 +145,11 @@ createWorker("cron", async (job) => {
   }
 });
 
+console.log("[worker] cron", { enabled: Boolean(cronWorker) });
+
 // Ensure repeatable cron jobs exist when BullMQ is enabled.
 const cronQueue = getQueue("cron");
-if (cronQueue) {
+if (cronQueue && cronWorker) {
   void cronQueue.add(
     "scan-overdue",
     {},
