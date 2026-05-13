@@ -5,8 +5,9 @@ import { prisma } from "@/lib/db/prisma";
 import { formatPersonName } from "@/lib/ops";
 import { listRecentActivity } from "@/services/activity/activity-service";
 import { getOrCreateDailyDigest } from "@/services/ai/ai-service";
+import { cacheGetJson, cacheSetJson } from "@/modules/performance/cache";
 
-export async function getDashboard(teamId: string, options?: { userId?: string; roleKey?: RoleKey | null }) {
+async function getDashboardUncached(teamId: string, options?: { userId?: string; roleKey?: RoleKey | null }) {
   const now = new Date();
   const startOfTodayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0));
   const endOfTodayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999));
@@ -248,4 +249,16 @@ export async function getDashboard(teamId: string, options?: { userId?: string; 
     activity,
     digest,
   };
+}
+
+export type DashboardResult = Awaited<ReturnType<typeof getDashboardUncached>>;
+
+export async function getDashboard(teamId: string, options?: { userId?: string; roleKey?: RoleKey | null }) {
+  const cacheKey = options?.userId ? `dash:v1:${teamId}:u:${options.userId}` : `dash:v1:${teamId}:u:none`;
+  const cached = await cacheGetJson<DashboardResult>(cacheKey).catch(() => null);
+  if (cached) return cached;
+
+  const fresh = await getDashboardUncached(teamId, options);
+  void cacheSetJson(cacheKey, fresh, 20).catch(() => {});
+  return fresh;
 }

@@ -306,7 +306,7 @@ export async function handleWebhookUpdate(update: TelegramUpdate) {
       await sendRichMessage({ chatId, text: "<b>Task not found.</b>\nCheck the task ID from `/tasks` and try again.\n\n<i>Built by Dhereal1</i>" });
       return;
     }
-    await updateTask({ teamId: ctx.teamId, taskId, assignedToId: assignee.id });
+    await updateTask({ teamId: ctx.teamId, taskId, assignedToId: assignee.id, actorId: ctx.user.id });
     await logActivity({
       teamId: ctx.teamId,
       actorId: ctx.user.id,

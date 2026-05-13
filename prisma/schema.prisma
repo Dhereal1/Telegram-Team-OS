@@ -81,6 +81,18 @@ model User {
   teamsCreated Team[] @relation("TeamCreatedBy")
   invitesCreated TeamInvite[]
   invitesUsed    TeamInvite[] @relation("InviteUsedBy")
+
+  notificationPreferences NotificationPreference[]
+  notifications          Notification[]
+
+  orgEdgesFrom OrgGraphEdge[] @relation("OrgEdgeFrom")
+  orgEdgesTo   OrgGraphEdge[] @relation("OrgEdgeTo")
+
+  productEvents ProductEvent[]
+  feedback      Feedback[]
+  checkins      DailyCheckin[]
+  streaks       HabitStreak[]
+  templateInstalls TemplateInstall[] @relation("TemplateInstalledBy")
 }
 
 model Team {
@@ -113,6 +125,25 @@ model Team {
   wallets    Wallet[]
   sessions   Session[]
   invites    TeamInvite[]
+
+  domainEvents DomainEvent[]
+  notifications Notification[]
+  notificationTemplates NotificationTemplate[]
+  notificationPreferences NotificationPreference[]
+
+  insights      OperationalInsight[]
+  insightRuns   InsightRun[]
+  orgGraphEdges OrgGraphEdge[]
+  metricPoints  MetricTimeseriesPoint[]
+
+  appInstalls WorkspaceAppInstall[]
+
+  productEvents ProductEvent[]
+  feedback      Feedback[]
+  flagOverrides WorkspaceFlagOverride[]
+  checkins      DailyCheckin[]
+  streaks       HabitStreak[]
+  templateInstalls TemplateInstall[]
 
   @@index([createdByUserId])
   @@index([planTier])
@@ -314,4 +345,497 @@ model AIInsight {
   @@index([userId, createdAt])
   @@index([reportId])
   @@index([taskId])
+}
+
+// ----------------------------
+// Phase 2 foundations
+// ----------------------------
+
+enum DomainEventStatus {
+  PENDING
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  DEAD_LETTER
+}
+
+model DomainEvent {
+  id            String           @id @default(cuid())
+  teamId        String?
+  // Namespaced event name, e.g. "teamos.task.created"
+  name          String
+  // Event schema version for governance/replay
+  version       Int              @default(1)
+  // Optional schema key (stable identifier) for migrations
+  schemaKey     String?
+  dedupeKey     String?
+  payload       Json
+  status        DomainEventStatus @default(PENDING)
+  attempts      Int              @default(0)
+  lastError     String?
+  processedAt   DateTime?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  team          Team?            @relation(fields: [teamId], references: [id], onDelete: SetNull)
+
+  @@index([name, createdAt])
+  @@index([teamId, createdAt])
+  @@index([status, createdAt])
+  @@unique([name, teamId, dedupeKey])
+}
+
+enum PlatformAppStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model PlatformApp {
+  id        String            @id @default(cuid())
+  // stable key, e.g. "teamos.core", "crm.core"
+  key       String            @unique
+  name      String
+  status    PlatformAppStatus @default(ACTIVE)
+  // SemVer-ish string; governance only
+  version   String
+  manifest  Json
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  installs  WorkspaceAppInstall[]
+}
+
+enum InstallStatus {
+  ENABLED
+  DISABLED
+}
+
+model WorkspaceAppInstall {
+  id        String        @id @default(cuid())
+  teamId    String
+  appId     String
+  status    InstallStatus @default(ENABLED)
+  // app-scoped permission grants (JSON list for Phase 4; can normalize later)
+  grants    Json?
+  config    Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  app  PlatformApp @relation(fields: [appId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, appId])
+  @@index([teamId, status])
+  @@index([appId, status])
+}
+
+model PlatformServiceRegistration {
+  id        String   @id @default(cuid())
+  // service id, e.g. "teamos.core"
+  serviceId String
+  // semver string for contract governance
+  version   String
+  // capabilities the service exposes
+  capabilities Json
+  // optional metadata: owner, repo, etc.
+  metadata  Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([serviceId, version])
+  @@index([serviceId])
+}
+
+enum WorkflowStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum WorkflowExecutionStatus {
+  RUNNING
+  SUCCEEDED
+  FAILED
+  CANCELED
+}
+
+model Workflow {
+  id        String         @id @default(cuid())
+  teamId    String
+  name      String
+  status    WorkflowStatus @default(ACTIVE)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  versions  WorkflowVersion[]
+  executions WorkflowExecution[]
+
+  @@index([teamId, status])
+}
+
+model WorkflowVersion {
+  id          String   @id @default(cuid())
+  workflowId  String
+  version     Int
+  isCurrent   Boolean  @default(false)
+  // JSON graph describing triggers/conditions/actions
+  definition  Json
+
+  createdAt DateTime @default(now())
+
+  workflow Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  executions WorkflowExecution[]
+
+  @@unique([workflowId, version])
+  @@index([workflowId, isCurrent])
+}
+
+model WorkflowExecution {
+  id              String                 @id @default(cuid())
+  workflowId      String
+  workflowVersionId String
+  teamId          String
+  status          WorkflowExecutionStatus @default(RUNNING)
+  triggerEventId  String?
+  startedAt       DateTime               @default(now())
+  finishedAt      DateTime?
+  attempts        Int                    @default(0)
+  lastError       String?
+
+  workflow        Workflow        @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  workflowVersion WorkflowVersion @relation(fields: [workflowVersionId], references: [id], onDelete: Restrict)
+  logs            WorkflowLog[]
+
+  @@index([teamId, startedAt])
+  @@index([workflowId, startedAt])
+  @@index([status, startedAt])
+}
+
+model WorkflowLog {
+  id           String            @id @default(cuid())
+  executionId  String
+  level        String
+  message      String
+  metadata     Json?
+  createdAt    DateTime          @default(now())
+
+  execution WorkflowExecution @relation(fields: [executionId], references: [id], onDelete: Cascade)
+
+  @@index([executionId, createdAt])
+}
+
+enum NotificationChannel {
+  TELEGRAM
+  IN_APP
+  EMAIL
+  PUSH
+}
+
+enum NotificationStatus {
+  PENDING
+  SENDING
+  SENT
+  FAILED
+  CANCELED
+}
+
+enum NotificationPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+model NotificationTemplate {
+  id        String @id @default(cuid())
+  teamId    String?
+  key       String
+  channel   NotificationChannel
+  // JSON payload describing template format, variables, etc.
+  definition Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  team Team? @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, key, channel])
+  @@index([key])
+}
+
+model NotificationPreference {
+  id        String @id @default(cuid())
+  userId    String
+  teamId    String?
+  channel   NotificationChannel
+  enabled   Boolean @default(true)
+  // future: quiet hours, batching config, etc.
+  config    Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  team Team? @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, teamId, channel])
+  @@index([userId])
+  @@index([teamId])
+}
+
+model Notification {
+  id          String               @id @default(cuid())
+  teamId      String
+  userId      String?
+  channel     NotificationChannel
+  priority    NotificationPriority @default(NORMAL)
+  status      NotificationStatus   @default(PENDING)
+  templateKey String?
+  // Rendered payload to deliver; channel-specific
+  payload     Json
+  dedupeKey   String?
+  scheduledAt DateTime?
+  sentAt      DateTime?
+  attempts    Int                  @default(0)
+  lastError   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  team Team  @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@index([teamId, createdAt])
+  @@index([status, scheduledAt])
+  @@index([userId, createdAt])
+  @@unique([teamId, channel, dedupeKey])
+}
+
+// ----------------------------
+// Phase 3 foundations
+// ----------------------------
+
+enum InsightStatus {
+  OPEN
+  DISMISSED
+  RESOLVED
+}
+
+enum InsightSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+model OperationalInsight {
+  id            String         @id @default(cuid())
+  teamId        String
+  // e.g. "bottleneck.blocked_tasks", "risk.missed_reports", "workload.imbalance"
+  key           String
+  status        InsightStatus  @default(OPEN)
+  severity      InsightSeverity @default(INFO)
+  score         Int            @default(0) // 0-100
+  title         String
+  summary       String
+  recommendation String?
+  evidence      Json?
+  dedupeKey     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@index([teamId, createdAt])
+  @@index([teamId, key, createdAt])
+  @@index([status, createdAt])
+  @@unique([teamId, key, dedupeKey])
+}
+
+enum InsightRunStatus {
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
+model InsightRun {
+  id        String          @id @default(cuid())
+  teamId    String
+  kind      String          // e.g. "daily"
+  status    InsightRunStatus @default(RUNNING)
+  stats     Json?
+  lastError String?
+  startedAt DateTime        @default(now())
+  finishedAt DateTime?
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@index([teamId, startedAt])
+  @@index([status, startedAt])
+}
+
+enum GraphEdgeType {
+  REPORTS_TO
+  COLLABORATES_WITH
+  DELEGATES_TO
+  REVIEWS_FOR
+}
+
+model OrgGraphEdge {
+  id        String        @id @default(cuid())
+  teamId    String
+  type      GraphEdgeType
+  fromUserId String
+  toUserId   String
+  weight    Int           @default(1)
+  lastSeenAt DateTime     @default(now())
+  metadata  Json?
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  fromUser User @relation("OrgEdgeFrom", fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUser   User @relation("OrgEdgeTo", fields: [toUserId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, type, fromUserId, toUserId])
+  @@index([teamId, type])
+  @@index([fromUserId])
+  @@index([toUserId])
+}
+
+model MetricTimeseriesPoint {
+  id        String   @id @default(cuid())
+  teamId    String
+  key       String   // e.g. "health.reliability", "velocity.tasks_completed_7d"
+  ts        DateTime @default(now())
+  value     Float
+  metadata  Json?
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@index([teamId, key, ts])
+  @@index([key, ts])
+}
+
+// ----------------------------
+// Phase 5 foundations
+// ----------------------------
+
+model ProductEvent {
+  id        String   @id @default(cuid())
+  teamId    String?
+  userId    String?
+  name      String
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  team Team? @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([teamId, createdAt])
+  @@index([userId, createdAt])
+  @@index([name, createdAt])
+}
+
+model Feedback {
+  id        String   @id @default(cuid())
+  teamId    String?
+  userId    String?
+  kind      String   // e.g. "bug", "feedback"
+  message   String
+  page      String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  team Team? @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([teamId, createdAt])
+  @@index([kind, createdAt])
+}
+
+model FeatureFlag {
+  id           String   @id @default(cuid())
+  key          String   @unique
+  description  String?
+  defaultEnabled Boolean @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  overrides WorkspaceFlagOverride[]
+}
+
+model WorkspaceFlagOverride {
+  id        String  @id @default(cuid())
+  teamId    String
+  flagId    String
+  enabled   Boolean
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  flag FeatureFlag @relation(fields: [flagId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, flagId])
+  @@index([teamId])
+  @@index([flagId])
+}
+
+model DailyCheckin {
+  id       String @id @default(cuid())
+  teamId   String
+  userId   String
+  dateKey  String // YYYY-MM-DD (UTC)
+  createdAt DateTime @default(now())
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId, dateKey])
+  @@index([teamId, dateKey])
+  @@index([userId, dateKey])
+}
+
+model HabitStreak {
+  id        String @id @default(cuid())
+  teamId    String
+  userId    String
+  current   Int    @default(0)
+  best      Int    @default(0)
+  lastDateKey String?
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@index([teamId])
+  @@index([userId])
+}
+
+model WorkspaceTemplate {
+  id        String @id @default(cuid())
+  key       String @unique // e.g. "creator", "agency", "crypto"
+  name      String
+  description String?
+  definition Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  installs TemplateInstall[]
+}
+
+model TemplateInstall {
+  id         String @id @default(cuid())
+  teamId     String
+  templateId String
+  installedById String?
+  createdAt DateTime @default(now())
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  template WorkspaceTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  installedBy User? @relation("TemplateInstalledBy", fields: [installedById], references: [id], onDelete: SetNull)
+
+  @@unique([teamId, templateId])
+  @@index([teamId, createdAt])
 }
