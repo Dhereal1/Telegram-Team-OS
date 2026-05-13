@@ -1,0 +1,317 @@
+// Dhereal TeamOS — Phase 1 schema
+// Built by Dhereal1
+
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum RoleKey {
+  FOUNDER
+  ADMIN
+  STAFF
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  BLOCKED
+  DONE
+  CANCELED
+}
+
+enum TaskPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum ReportStatus {
+  DRAFT
+  SUBMITTED
+  REVIEWED
+}
+
+enum WalletProvider {
+  TON
+}
+
+enum WalletStatus {
+  CONNECTED
+  DISCONNECTED
+}
+
+enum AIInsightType {
+  SUMMARY
+  STAFF_SCORE
+  DAILY_DIGEST
+}
+
+enum PlanTier {
+  FREE
+  PRO
+  BUSINESS
+}
+
+model User {
+  id         String   @id @default(cuid())
+  telegramId BigInt?  @unique
+  username   String?
+  firstName  String?
+  lastName   String?
+  photoUrl   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships  TeamMember[]
+  sessions     Session[]
+  tasksCreated Task[]     @relation("TaskCreated")
+  tasksAssigned Task[]    @relation("TaskAssigned")
+  reports      Report[]
+  reportsReviewed Report[] @relation("ReportReviewedBy")
+  activity     ActivityLog[]
+  wallets      Wallet[]
+  aiInsights   AIInsight[]
+  teamsCreated Team[] @relation("TeamCreatedBy")
+  invitesCreated TeamInvite[]
+  invitesUsed    TeamInvite[] @relation("InviteUsedBy")
+}
+
+model Team {
+  id            String  @id @default(cuid())
+  name          String
+  slug          String  @unique
+  telegramChatId BigInt?
+
+  planTier        PlanTier @default(FREE)
+  planStartedAt   DateTime?
+  billingProvider String?
+  billingCustomerId String?
+  billingStatus   String?
+  usageWindowStart DateTime @default(now())
+  usageTasksCount  Int      @default(0)
+  usageReportsCount Int     @default(0)
+  usageInvitesCount Int     @default(0)
+
+  createdByUserId String?
+  createdBy       User?   @relation("TeamCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members    TeamMember[]
+  tasks      Task[]
+  reports    Report[]
+  activity   ActivityLog[]
+  aiInsights AIInsight[]
+  wallets    Wallet[]
+  sessions   Session[]
+  invites    TeamInvite[]
+
+  @@index([createdByUserId])
+  @@index([planTier])
+}
+
+model Role {
+  id          String  @id @default(cuid())
+  key         RoleKey @unique
+  name        String
+  description String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members TeamMember[]
+}
+
+model TeamMember {
+  id       String @id @default(cuid())
+  teamId   String
+  userId   String
+  roleId   String
+  title    String?
+  isActive Boolean @default(true)
+
+  joinedAt  DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Restrict)
+
+  @@unique([teamId, userId])
+  @@index([userId])
+  @@index([teamId])
+  @@index([roleId])
+}
+
+model Task {
+  id           String       @id @default(cuid())
+  teamId       String
+  createdById  String
+  assignedToId String?
+
+  title       String
+  description String?
+  status      TaskStatus   @default(TODO)
+  priority    TaskPriority @default(NORMAL)
+
+  dueAt       DateTime?
+  completedAt DateTime?
+  archivedAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  team       Team  @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  createdBy  User  @relation("TaskCreated", fields: [createdById], references: [id], onDelete: Restrict)
+  assignedTo User? @relation("TaskAssigned", fields: [assignedToId], references: [id], onDelete: SetNull)
+
+  aiInsights AIInsight[]
+
+  @@index([teamId, status])
+  @@index([assignedToId, status])
+  @@index([createdById])
+  @@index([dueAt])
+  @@index([archivedAt])
+}
+
+model Report {
+  id       String @id @default(cuid())
+  teamId   String
+  authorId String
+
+  title  String
+  body   String
+  status ReportStatus @default(DRAFT)
+
+  periodStart DateTime?
+  periodEnd   DateTime?
+
+  reviewNotes String?
+  reviewedAt  DateTime?
+  reviewedById String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  team   Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  author User @relation(fields: [authorId], references: [id], onDelete: Restrict)
+  reviewedBy User? @relation("ReportReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  aiInsights AIInsight[]
+
+  @@index([teamId, createdAt])
+  @@index([authorId, createdAt])
+  @@index([reviewedById])
+}
+
+model TeamInvite {
+  id          String  @id @default(cuid())
+  teamId      String
+  createdById String
+  token       String  @unique
+  roleKey     RoleKey @default(STAFF)
+  expiresAt   DateTime
+  usedAt      DateTime?
+  usedById    String?
+
+  createdAt DateTime @default(now())
+
+  team      Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  createdBy User @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  usedBy    User? @relation("InviteUsedBy", fields: [usedById], references: [id], onDelete: SetNull)
+
+  @@index([teamId, expiresAt])
+  @@index([createdById, createdAt])
+}
+
+model ActivityLog {
+  id         String @id @default(cuid())
+  teamId     String
+  actorId    String?
+
+  action     String
+  entityType String?
+  entityId   String?
+  metadata   Json?
+
+  createdAt DateTime @default(now())
+
+  team  Team  @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([teamId, createdAt])
+  @@index([actorId, createdAt])
+}
+
+model Session {
+  id         String   @id @default(cuid())
+  userId     String
+  teamId     String?
+  token      String   @unique
+
+  createdAt  DateTime @default(now())
+  lastSeenAt DateTime @default(now())
+  expiresAt  DateTime
+  ip         String?
+  userAgent  String?
+
+  user User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  team Team? @relation(fields: [teamId], references: [id], onDelete: SetNull)
+
+  @@index([userId, expiresAt])
+  @@index([teamId])
+}
+
+model Wallet {
+  id       String        @id @default(cuid())
+  provider WalletProvider @default(TON)
+  status   WalletStatus   @default(DISCONNECTED)
+  address  String?        @unique
+
+  userId String?
+  teamId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  team Team? @relation(fields: [teamId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([teamId])
+}
+
+model AIInsight {
+  id        String @id @default(cuid())
+  teamId    String
+  userId    String?
+  reportId  String?
+  taskId    String?
+
+  type      AIInsightType
+  provider  String
+  model     String?
+  inputHash String?
+  content   String
+
+  createdAt DateTime @default(now())
+
+  team   Team    @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+  report Report? @relation(fields: [reportId], references: [id], onDelete: SetNull)
+  task   Task?   @relation(fields: [taskId], references: [id], onDelete: SetNull)
+
+  @@index([teamId, createdAt])
+  @@index([type, createdAt])
+  @@index([userId, createdAt])
+  @@index([reportId])
+  @@index([taskId])
+}
