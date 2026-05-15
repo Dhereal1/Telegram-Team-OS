@@ -6,7 +6,7 @@ import { useTelegramStore } from "@/store/telegram-store";
 
 export function useTelegramBootstrap() {
   const initData = useRawInitData();
-  const launchParams = useLaunchParams(true);
+  const launchParams = useLaunchParams(false);
   const setMiniApp = useTelegramStore((s) => s.setMiniApp);
   const setInitData = useTelegramStore((s) => s.setInitData);
 
@@ -17,4 +17,3 @@ export function useTelegramBootstrap() {
 
   return { initData, launchParams };
 }
-
