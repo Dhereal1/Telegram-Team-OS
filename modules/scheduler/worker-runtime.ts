@@ -13,5 +13,5 @@ export function createWorker(name: string, processor: Processor, options?: { con
   const connection = getRedisConnection();
   if (!connection) return null;
   // Phase 10: allow per-worker tuning while keeping behavior predictable.
-  return new Worker(`${prefix()}:${name}`, processor as never, { connection, concurrency: options?.concurrency ?? 1 });
+  return new Worker(`${prefix()}-${name}`, processor as never, { connection, concurrency: options?.concurrency ?? 1 });
 }

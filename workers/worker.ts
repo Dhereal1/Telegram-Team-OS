@@ -1,3 +1,4 @@
+import "dotenv/config";
 import "@/modules/bootstrap/server";
 
 import { createWorker } from "@/modules/scheduler/worker-runtime";

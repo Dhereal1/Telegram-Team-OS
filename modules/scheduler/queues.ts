@@ -13,5 +13,5 @@ function prefix() {
 export function getQueue(name: QueueName) {
   const connection = getRedisConnection();
   if (!connection) return null;
-  return new Queue(`${prefix()}:${name}`, { connection });
+  return new Queue(`${prefix()}-${name}`, { connection });
 }
