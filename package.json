@@ -21,7 +21,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "worker": "tsx workers/worker.ts"
+    "worker": "tsx workers/worker.ts",
+    "bot:poll": "tsx workers/telegram-poll.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",

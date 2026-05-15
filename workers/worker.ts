@@ -20,28 +20,73 @@ import { generateStrategicTeamInsights } from "@/modules/intelligence/strategic-
 import { generateTeamPredictionSignals } from "@/modules/prediction/prediction.service";
 import { generateTeamRiskSignals } from "@/modules/risk/risk.service";
 import { generateOrchestrationSuggestions } from "@/modules/orchestration/orchestration.service";
+import { getRedisConnection } from "@/modules/scheduler/redis";
+
+type WorkerQueue =
+  | "intelligence"
+  | "domain-events"
+  | "notifications"
+  | "webhooks"
+  | "cron";
+
+function parseWorkerQueues(): Set<WorkerQueue> {
+  const raw = process.env.WORKER_QUEUES?.trim();
+  if (raw) {
+    return new Set(
+      raw
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean) as WorkerQueue[],
+    );
+  }
+
+  // Safer local default: BullMQ opens multiple Redis connections per queue/worker.
+  if (process.env.NODE_ENV !== "production") {
+    return new Set<WorkerQueue>(["domain-events", "notifications", "webhooks", "cron"]);
+  }
+
+  return new Set<WorkerQueue>(["intelligence", "domain-events", "notifications", "webhooks", "cron"]);
+}
+
+const enabledQueues = parseWorkerQueues();
+const enabled = (name: WorkerQueue) => enabledQueues.has(name);
+
+function logWorker(event: string, extra: Record<string, unknown> = {}) {
+  console.log(JSON.stringify({ ts: new Date().toISOString(), type: "worker.log", event, ...extra }));
+}
+
+process.on("unhandledRejection", (reason: unknown) => {
+  logWorker("unhandledRejection", { message: reason instanceof Error ? reason.message : String(reason) });
+});
+
+process.on("uncaughtException", (err: unknown) => {
+  logWorker("uncaughtException", { message: err instanceof Error ? err.message : "Uncaught exception" });
+});
 
 // Phase 10: fan-out heavy insight generation work into its own queue for better throughput and failure isolation.
-const intelligenceWorker = createWorker(
-  "intelligence",
-  async (job) => {
-    const j = job as Job;
-    const teamId = (j.data as { teamId?: string }).teamId;
-    if (!teamId) return;
+const intelligenceWorker = enabled("intelligence")
+  ? createWorker(
+      "intelligence",
+      async (job) => {
+        const j = job as Job;
+        const teamId = (j.data as { teamId?: string }).teamId;
+        if (!teamId) return;
 
-    // Each generator is isolated so a single failure doesn't block the rest.
-    await generateDailyTeamInsights(teamId);
-    await generateStrategicTeamInsights(teamId).catch(() => {});
-    await generateTeamPredictionSignals(teamId).catch(() => {});
-    await generateTeamRiskSignals(teamId).catch(() => {});
-    await generateOrchestrationSuggestions(teamId).catch(() => {});
-    await maybeNotifyFounderDigest(teamId).catch(() => {});
-  },
-  { concurrency: 5 },
-);
+        // Each generator is isolated so a single failure doesn't block the rest.
+        await generateDailyTeamInsights(teamId);
+        await generateStrategicTeamInsights(teamId).catch(() => {});
+        await generateTeamPredictionSignals(teamId).catch(() => {});
+        await generateTeamRiskSignals(teamId).catch(() => {});
+        await generateOrchestrationSuggestions(teamId).catch(() => {});
+        await maybeNotifyFounderDigest(teamId).catch(() => {});
+      },
+      { concurrency: 5 },
+    )
+  : null;
 
 // Domain events -> in-process listeners + workflows
-const domainEventsWorker = createWorker("domain-events", async (job) => {
+const domainEventsWorker = enabled("domain-events")
+  ? createWorker("domain-events", async (job) => {
   const j = job as Job;
   const eventId = (j.data as { eventId?: string }).eventId;
   if (!eventId) return;
@@ -81,10 +126,12 @@ const domainEventsWorker = createWorker("domain-events", async (job) => {
     await markDomainEventStatus({ id: evt.id, status: j.attemptsMade + 1 >= (j.opts.attempts ?? 1) ? "DEAD_LETTER" : "FAILED", lastError: msg }).catch(() => {});
     throw e;
   }
-});
+})
+  : null;
 
 // Notifications delivery
-const notificationsWorker = createWorker("notifications", async (job) => {
+const notificationsWorker = enabled("notifications")
+  ? createWorker("notifications", async (job) => {
   const j = job as Job;
   const notificationId = (j.data as { notificationId?: string }).notificationId;
   if (!notificationId) return;
@@ -105,21 +152,39 @@ const notificationsWorker = createWorker("notifications", async (job) => {
     await markNotificationFailed({ id: notificationId, error: msg });
     throw e;
   }
-});
+})
+  : null;
 
 // External webhooks delivery (Phase 8)
-const webhooksWorker = createWorker("webhooks", async (job) => {
+const webhooksWorker = enabled("webhooks")
+  ? createWorker("webhooks", async (job) => {
   const j = job as Job;
   const deliveryId = (j.data as { deliveryId?: string }).deliveryId;
   if (!deliveryId) return;
   await deliverWebhook(deliveryId, { attempt: j.attemptsMade + 1, maxAttempts: j.opts.attempts ?? 1 });
-});
+})
+  : null;
 
 // Keep process alive when workers are enabled.
 process.on("SIGINT", () => process.exit(0));
 process.on("SIGTERM", () => process.exit(0));
 
-console.log("[worker] started", {
+const redisConnection = getRedisConnection();
+if (!redisConnection) {
+  logWorker("redis.disabled", { reason: "REDIS_URL is not set", enabledQueues: Array.from(enabledQueues) });
+} else {
+  // Proactively connect so Redis failures show up as a clear startup error (instead of silent no-op behavior).
+  void redisConnection.connect().catch((err: unknown) => {
+    logWorker("redis.connect_failed", {
+      message: err instanceof Error ? err.message : "Redis connection failed",
+      enabledQueues: Array.from(enabledQueues),
+    });
+    process.exitCode = 1;
+  });
+}
+
+logWorker("started", {
+  enabledQueues: Array.from(enabledQueues),
   intelligence: Boolean(intelligenceWorker),
   domainEvents: Boolean(domainEventsWorker),
   notifications: Boolean(notificationsWorker),
@@ -127,7 +192,8 @@ console.log("[worker] started", {
 });
 
 // Cron worker: lightweight periodic scans (Phase 2 accountability foundations).
-const cronWorker = createWorker("cron", async (job) => {
+const cronWorker = enabled("cron")
+  ? createWorker("cron", async (job) => {
   const j = job as Job;
   if (j.name === "scan-overdue") {
     await scanOverdueTasks();
@@ -194,9 +260,10 @@ const cronWorker = createWorker("cron", async (job) => {
     }
     return;
   }
-});
+})
+  : null;
 
-console.log("[worker] cron", { enabled: Boolean(cronWorker) });
+logWorker("cron", { enabled: Boolean(cronWorker) });
 
 // Ensure repeatable cron jobs exist when BullMQ is enabled.
 const cronQueue = getQueue("cron");

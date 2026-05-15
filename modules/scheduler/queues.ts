@@ -10,8 +10,19 @@ function prefix() {
   return env.REDIS_QUEUE_PREFIX ?? "teamos";
 }
 
+declare global {
+  var __teamosQueues: Map<QueueName, Queue> | undefined;
+}
+
 export function getQueue(name: QueueName) {
   const connection = getRedisConnection();
   if (!connection) return null;
-  return new Queue(`${prefix()}-${name}`, { connection });
+
+  const cache = (globalThis.__teamosQueues ??= new Map<QueueName, Queue>());
+  const existing = cache.get(name);
+  if (existing) return existing;
+
+  const queue = new Queue(`${prefix()}-${name}`, { connection });
+  cache.set(name, queue);
+  return queue;
 }
