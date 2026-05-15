@@ -25,13 +25,18 @@ export function LoginCard() {
   const sp = useSearchParams();
   const invite = sp.get("invite");
   const [loading, setLoading] = React.useState(false);
-  const [initData] = React.useState<string | null>(() => {
-    if (typeof window === "undefined") return null;
-    return window.Telegram?.WebApp?.initData ?? null;
-  });
+  const [initData, setInitData] = React.useState<string | null>(null);
+
+  const refreshInitData = React.useCallback(() => {
+    if (typeof window === "undefined") return;
+    const next = window.Telegram?.WebApp?.initData ?? null;
+    setInitData(next);
+  }, []);
 
   async function loginWithWebApp() {
-    if (!initData) {
+    // Read the latest initData (Telegram injects it via telegram-web-app.js).
+    const currentInitData = window.Telegram?.WebApp?.initData ?? initData;
+    if (!currentInitData) {
       toast.error("Open this inside the Telegram Mini App to continue.");
       return;
     }
@@ -40,7 +45,7 @@ export function LoginCard() {
       const res = await fetch("/api/auth/telegram", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ type: "webapp", initData, inviteToken: invite ?? undefined }),
+        body: JSON.stringify({ type: "webapp", initData: currentInitData, inviteToken: invite ?? undefined }),
       });
       if (!res.ok) throw new Error((await res.json()).error ?? "Login failed");
       window.location.href = "/dashboard";
@@ -99,10 +104,17 @@ export function LoginCard() {
       <div className="mt-6 text-center text-xs text-muted-foreground">{BUILT_BY}</div>
 
       <Script
+        id="telegram-web-app-script"
+        src="https://telegram.org/js/telegram-web-app.js"
+        strategy="afterInteractive"
+        onLoad={refreshInitData}
+      />
+      <Script
         id="telegram-login-widget-script"
         src="https://telegram.org/js/telegram-widget.js?22"
         strategy="afterInteractive"
         onLoad={() => {
+          refreshInitData();
           // Inject widget script tag with required attributes (Telegram parses them at runtime).
           const root = document.getElementById("telegram-login-widget");
           if (!root) return;
