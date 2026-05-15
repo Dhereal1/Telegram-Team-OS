@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { APP_NAME, BUILT_BY } from "@/lib/constants/app";
 import { envClient } from "@/lib/env/client";
+import { useTelegramStore } from "@/store/telegram-store";
 
 declare global {
   interface Window {
@@ -26,6 +27,7 @@ export function LoginCard() {
   const invite = sp.get("invite");
   const [loading, setLoading] = React.useState(false);
   const [initData, setInitData] = React.useState<string | null>(null);
+  const storeInitData = useTelegramStore((s) => s.initData);
 
   const refreshInitData = React.useCallback(() => {
     if (typeof window === "undefined") return;
@@ -35,7 +37,7 @@ export function LoginCard() {
 
   async function loginWithWebApp() {
     // Read the latest initData (Telegram injects it via telegram-web-app.js).
-    const currentInitData = window.Telegram?.WebApp?.initData ?? initData;
+    const currentInitData = window.Telegram?.WebApp?.initData ?? initData ?? storeInitData;
     if (!currentInitData) {
       toast.error("Open this inside the Telegram Mini App to continue.");
       return;
