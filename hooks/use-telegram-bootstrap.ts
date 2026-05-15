@@ -1,19 +1,27 @@
 "use client";
 
 import * as React from "react";
-import { useRawInitData, useLaunchParams } from "@tma.js/sdk-react";
 import { useTelegramStore } from "@/store/telegram-store";
 
 export function useTelegramBootstrap() {
-  const initData = useRawInitData();
-  const launchParams = useLaunchParams(false);
   const setMiniApp = useTelegramStore((s) => s.setMiniApp);
   const setInitData = useTelegramStore((s) => s.setInitData);
 
   React.useEffect(() => {
-    setInitData(initData ?? null);
-    setMiniApp(Boolean(initData));
-  }, [initData, setInitData, setMiniApp]);
+    const w = window as unknown as {
+      Telegram?: {
+        WebApp?: {
+          initData?: string;
+        };
+      };
+    };
 
-  return { initData, launchParams };
+    const initData = w.Telegram?.WebApp?.initData;
+    const isTelegram = typeof initData === "string" && initData.trim().length > 0;
+
+    setInitData(isTelegram ? initData : null);
+    setMiniApp(isTelegram);
+  }, [setInitData, setMiniApp]);
+
+  return { initData: null, launchParams: null };
 }
