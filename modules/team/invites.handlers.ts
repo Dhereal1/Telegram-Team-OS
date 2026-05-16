@@ -11,6 +11,8 @@ import { HttpError } from "@/packages/core/http-error";
 import * as invitesService from "@/modules/team/invites.service";
 import * as invitesRepo from "@/modules/team/invites.repository";
 import { env } from "@/lib/env";
+import { checkLimit } from "@/lib/billing/plans";
+import { prisma } from "@/lib/db/prisma";
 
 const createInviteSchema = z.object({
   roleKey: z.enum(["ADMIN", "STAFF"]).default("STAFF"),
@@ -50,10 +52,20 @@ export const invitesPOST = withApi(async (request) => {
 
     const idem = await beginIdempotency({ request, teamId: session.teamId!, route: "/api/team/invites:POST" });
     const body = createInviteSchema.parse(await request.json());
+
+    const memberLimit = await checkLimit(session.teamId!, "members");
+    if (!memberLimit.allowed) return jsonErr(memberLimit.reason ?? "Upgrade required.", { status: 402, headers: { "x-request-id": obs.requestId } });
+
+    const inviteLimit = await checkLimit(session.teamId!, "invites");
+    if (!inviteLimit.allowed) return jsonErr(inviteLimit.reason ?? "Upgrade required.", { status: 402, headers: { "x-request-id": obs.requestId } });
+
     const invite = await invitesService.createInvite({ teamId: session.teamId!, createdById: session.userId, roleKey: body.roleKey });
     const username = env.TELEGRAM_BOT_USERNAME ?? process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME;
     if (!username) throw new HttpError("TELEGRAM_BOT_USERNAME is required", 500, "MISCONFIGURED");
     const deepLink = `https://t.me/${username}?start=ws_${invite.token}`;
+
+    await prisma.team.update({ where: { id: session.teamId! }, data: { usageInvitesCount: { increment: 1 } }, select: { id: true } });
+
     await finishIdempotency({ redisKey: idem?.redisKey ?? null, result: { invite } });
     obsEnd(obs, 201);
     return jsonOk({ invite, deepLink }, { status: 201, headers: { "x-request-id": obs.requestId } });

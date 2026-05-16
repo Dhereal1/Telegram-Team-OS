@@ -3,6 +3,7 @@ import "server-only";
 import { prisma } from "@/lib/db/prisma";
 import { notificationsQueue } from "@/lib/queues";
 import type { CommandContext } from "@/lib/telegram/commands/handlers/types";
+import { checkLimit } from "@/lib/billing/plans";
 
 function normalizeUsername(input: string) {
   return input.replace(/^@/, "").trim().toLowerCase();
@@ -34,6 +35,9 @@ export async function handleAssign(ctx: CommandContext): Promise<string> {
   });
 
   if (!member?.user) return `Could not find @${username} in this workspace`;
+
+  const limit = await checkLimit(ctx.teamId, "tasks");
+  if (!limit.allowed) return limit.reason ?? "Upgrade required.";
 
   const created = await prisma.task.create({
     data: {
@@ -68,6 +72,8 @@ export async function handleAssign(ctx: CommandContext): Promise<string> {
       { removeOnComplete: 1000, removeOnFail: 5000, attempts: 5, backoff: { type: "exponential", delay: 10_000 } },
     );
   }
+
+  await prisma.team.update({ where: { id: ctx.teamId }, data: { usageTasksCount: { increment: 1 } }, select: { id: true } });
 
   return `Task assigned to @${username}: ${title}`;
 }

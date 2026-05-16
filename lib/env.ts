@@ -13,6 +13,10 @@ export const env = createEnv({
     TELEGRAM_BOT_USERNAME: z.string().min(1).optional(),
     // Required in production to validate Telegram webhook origin.
     TELEGRAM_WEBHOOK_SECRET: z.string().optional(),
+    STRIPE_SECRET_KEY: z.string().min(1).optional(),
+    STRIPE_WEBHOOK_SECRET: z.string().min(1).optional(),
+    STRIPE_PRICE_PRO: z.string().min(1).optional(),
+    STRIPE_PRICE_BUSINESS: z.string().min(1).optional(),
     // BullMQ / durable processing (Redis protocol over TCP)
     REDIS_URL: z.string().min(1).optional(),
     REDIS_QUEUE_PREFIX: z.string().min(1).optional(),
@@ -33,6 +37,10 @@ export const env = createEnv({
     TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
     TELEGRAM_BOT_USERNAME: process.env.TELEGRAM_BOT_USERNAME,
     TELEGRAM_WEBHOOK_SECRET: process.env.TELEGRAM_WEBHOOK_SECRET,
+    STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY,
+    STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET,
+    STRIPE_PRICE_PRO: process.env.STRIPE_PRICE_PRO,
+    STRIPE_PRICE_BUSINESS: process.env.STRIPE_PRICE_BUSINESS,
     REDIS_URL: process.env.REDIS_URL,
     REDIS_QUEUE_PREFIX: process.env.REDIS_QUEUE_PREFIX,
     UPSTASH_REDIS_REST_URL: process.env.UPSTASH_REDIS_REST_URL,

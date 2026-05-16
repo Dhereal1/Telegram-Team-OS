@@ -9,6 +9,8 @@ import { obsEnd, obsError, obsStart } from "@/lib/obs/server";
 import { createTaskSchema, updateTaskSchema } from "@/lib/validators/tasks";
 import * as tasksService from "@/modules/tasks/tasks.service";
 import { HttpError } from "@/packages/core/http-error";
+import { checkLimit } from "@/lib/billing/plans";
+import { prisma } from "@/lib/db/prisma";
 
 export const tasksGET = withApi(async (request) => {
   const obs = obsStart(request, "/api/tasks");
@@ -45,6 +47,9 @@ export const tasksPOST = withApi(async (request) => {
     const idem = await beginIdempotency({ request, teamId: session.teamId!, route: "/api/tasks:POST" });
     const body = createTaskSchema.parse(await request.json());
 
+    const limit = await checkLimit(session.teamId!, "tasks");
+    if (!limit.allowed) return jsonErr(limit.reason ?? "Upgrade required.", { status: 402, headers: { "x-request-id": obs.requestId } });
+
     const task = await tasksService.createTask({
       teamId: session.teamId!,
       actorId: session.userId,
@@ -54,6 +59,8 @@ export const tasksPOST = withApi(async (request) => {
       priority: body.priority,
       dueAt: body.dueAt ? new Date(body.dueAt) : undefined,
     });
+
+    await prisma.team.update({ where: { id: session.teamId! }, data: { usageTasksCount: { increment: 1 } }, select: { id: true } });
 
     await finishIdempotency({ redisKey: idem?.redisKey ?? null, result: { task } });
     obsEnd(obs, 201);
@@ -135,4 +142,3 @@ export const taskIdDELETE = withApi(async (request, ctx: { params: Promise<{ tas
     throw e;
   }
 });
-

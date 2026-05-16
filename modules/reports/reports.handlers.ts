@@ -11,6 +11,7 @@ import { reviewReportSchema } from "@/lib/validators/reports-review";
 import * as reportsService from "@/modules/reports/reports.service";
 import { HttpError } from "@/packages/core/http-error";
 import { prisma } from "@/lib/db/prisma";
+import { checkLimit } from "@/lib/billing/plans";
 
 export const reportsGET = withApi(async (request) => {
   const obs = obsStart(request, "/api/reports");
@@ -64,6 +65,16 @@ export const reportsPOST = withApi(async (request) => {
     );
     const reportDate = new Date(`${dateKey}T00:00:00.000Z`);
 
+    const existingReport = await prisma.report.findUnique({
+      where: { teamId_authorId_reportDate: { teamId: session.teamId!, authorId: session.userId, reportDate } },
+      select: { id: true },
+    });
+
+    if (!existingReport) {
+      const limit = await checkLimit(session.teamId!, "reports");
+      if (!limit.allowed) return jsonErr(limit.reason ?? "Upgrade required.", { status: 402, headers: { "x-request-id": obs.requestId } });
+    }
+
     const report = await reportsService.createReport({
       teamId: session.teamId!,
       actorId: session.userId,
@@ -71,6 +82,10 @@ export const reportsPOST = withApi(async (request) => {
       title: body.title,
       body: body.body,
     });
+
+    if (!existingReport) {
+      await prisma.team.update({ where: { id: session.teamId! }, data: { usageReportsCount: { increment: 1 } }, select: { id: true } });
+    }
     await finishIdempotency({ redisKey: idem?.redisKey ?? null, result: { report } });
     obsEnd(obs, 201);
     return jsonOk({ report }, { status: 201, headers: { "x-request-id": obs.requestId } });

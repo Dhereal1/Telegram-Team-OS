@@ -2,6 +2,7 @@ import "server-only";
 
 import { prisma } from "@/lib/db/prisma";
 import type { CommandContext } from "@/lib/telegram/commands/handlers/types";
+import { checkLimit } from "@/lib/billing/plans";
 
 export async function handleReport(ctx: CommandContext): Promise<string> {
   const body = ctx.args.join(" ").trim();
@@ -17,7 +18,17 @@ export async function handleReport(ctx: CommandContext): Promise<string> {
   );
   const reportDate = new Date(`${dateKey}T00:00:00.000Z`);
 
-  const created = await prisma.report.upsert({
+  const existing = await prisma.report.findUnique({
+    where: { teamId_authorId_reportDate: { teamId: ctx.teamId, authorId: ctx.actorUserId, reportDate } },
+    select: { id: true },
+  });
+
+  if (!existing) {
+    const limit = await checkLimit(ctx.teamId, "reports");
+    if (!limit.allowed) return limit.reason ?? "Upgrade required.";
+  }
+
+  await prisma.report.upsert({
     where: { teamId_authorId_reportDate: { teamId: ctx.teamId, authorId: ctx.actorUserId, reportDate } },
     create: {
       teamId: ctx.teamId,
@@ -32,8 +43,12 @@ export async function handleReport(ctx: CommandContext): Promise<string> {
       status: "SUBMITTED",
       updatedAt: new Date(),
     },
-    select: { id: true, createdAt: true, updatedAt: true },
+    select: { id: true },
   });
 
-  return created.createdAt.getTime() === created.updatedAt.getTime() ? "Report submitted for today" : "Report updated for today";
+  if (!existing) {
+    await prisma.team.update({ where: { id: ctx.teamId }, data: { usageReportsCount: { increment: 1 } }, select: { id: true } });
+    return "Report submitted for today";
+  }
+  return "Report updated for today";
 }
