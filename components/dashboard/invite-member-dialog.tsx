@@ -9,7 +9,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { ApiResponse } from "@/types/api";
-import { envClient } from "@/lib/env/client";
 
 export function InviteMemberDialog() {
   const qc = useQueryClient();
@@ -33,7 +32,8 @@ export function InviteMemberDialog() {
       return json.data.invite.token;
     },
     onSuccess: async (token) => {
-      const base = envClient.NEXT_PUBLIC_APP_URL;
+      const base = process.env.NEXT_PUBLIC_APP_URL;
+      if (!base) throw new Error("NEXT_PUBLIC_APP_URL is not configured");
       const link = `${base}/login?invite=${encodeURIComponent(token)}`;
       setInviteLink(link);
       toast.success("Invite created");

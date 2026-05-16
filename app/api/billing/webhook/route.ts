@@ -18,7 +18,6 @@ function planFromPrice(priceId: string | null) {
 export async function POST(request: Request) {
   const stripe = getStripe();
   const secret = env.STRIPE_WEBHOOK_SECRET;
-  if (!secret) return new Response("Missing webhook secret", { status: 200 });
 
   const sig = request.headers.get("stripe-signature");
   if (!sig) return new Response("Missing signature", { status: 200 });

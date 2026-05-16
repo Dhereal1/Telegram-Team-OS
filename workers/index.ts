@@ -1,12 +1,21 @@
 import "dotenv/config";
-import "@/modules/bootstrap/server";
-
-import { startNotificationsWorker } from "@/workers/notifications.worker";
-import { startCronWorker } from "@/workers/cron.worker";
-import { scheduleRecurringJobs } from "@/workers/scheduler";
-import { registerBotCommands } from "@/lib/telegram/register-commands";
 
 async function main() {
+  try {
+    const { default: validateEnv } = await import("@/lib/env");
+    validateEnv();
+  } catch (e: unknown) {
+    console.error(e instanceof Error ? e.message : "Environment validation failed");
+    process.exit(1);
+  }
+
+  await import("@/modules/bootstrap/server");
+
+  const { startNotificationsWorker } = await import("@/workers/notifications.worker");
+  const { startCronWorker } = await import("@/workers/cron.worker");
+  const { scheduleRecurringJobs } = await import("@/workers/scheduler");
+  const { registerBotCommands } = await import("@/lib/telegram/register-commands");
+
   const notifications = startNotificationsWorker();
   const cron = startCronWorker();
   try {

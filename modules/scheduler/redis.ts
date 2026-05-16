@@ -23,7 +23,6 @@ function logRedisError(err: unknown) {
 
 export function getRedisConnection() {
   const url = env.REDIS_URL;
-  if (!url) return null;
 
   const existing = globalThis.__teamosIORedis;
   if (existing) return existing;

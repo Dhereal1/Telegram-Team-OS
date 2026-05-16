@@ -15,7 +15,6 @@ declare global {
 
 export function getRedisConnection() {
   const url = env.REDIS_URL;
-  if (!url) throw new Error("REDIS_URL is required for worker queues");
 
   const existing = globalThis.__teamosWorkerRedis;
   if (existing) return existing;

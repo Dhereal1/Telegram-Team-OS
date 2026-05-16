@@ -4,9 +4,6 @@ import { env } from "@/lib/env";
 
 async function tgFetch<T>(method: string, body: unknown): Promise<T> {
   const token = env.TELEGRAM_BOT_TOKEN;
-  if (!token) {
-    throw new Error("TELEGRAM_BOT_TOKEN is not set (required to call Telegram Bot API)");
-  }
   const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
     method: "POST",
     headers: { "content-type": "application/json" },

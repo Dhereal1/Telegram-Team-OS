@@ -7,8 +7,6 @@ let stripe: Stripe | null = null;
 
 export function getStripe() {
   if (stripe) return stripe;
-  const key = env.STRIPE_SECRET_KEY;
-  if (!key) throw new Error("STRIPE_SECRET_KEY is required");
-  stripe = new Stripe(key);
+  stripe = new Stripe(env.STRIPE_SECRET_KEY);
   return stripe;
 }
