@@ -263,7 +263,13 @@ export async function handleWebhookUpdate(update: TelegramUpdate) {
       return;
     }
     const title = `Telegram report · ${new Date().toISOString().slice(0, 10)}`;
-    const report = await createReport({ teamId: ctx.teamId, authorId: ctx.user.id, title, body });
+    const team = await prisma.team.findUnique({ where: { id: ctx.teamId }, select: { timezone: true } });
+    const tz = team?.timezone ?? "UTC";
+    const dateKey = new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(
+      new Date(),
+    );
+    const reportDate = new Date(`${dateKey}T00:00:00.000Z`);
+    const report = await createReport({ teamId: ctx.teamId, authorId: ctx.user.id, title, body, reportDate });
     await sendRichMessage({
       chatId,
       text: `<b>Report submitted.</b>\nSaved as <code>${report.id}</code> and pushed into founder review.\n\n<i>Built by Dhereal1</i>`,

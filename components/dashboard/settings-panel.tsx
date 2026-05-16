@@ -20,6 +20,8 @@ export function SettingsPanel() {
   const { data, isLoading, error } = useTeamMeta();
   const [teamName, setTeamName] = React.useState<string | null>(null);
   const teamNameValue = (teamName ?? data?.team?.name ?? "").trim();
+  const [timezone, setTimezone] = React.useState<string | null>(null);
+  const timezoneValue = (timezone ?? data?.team?.timezone ?? "UTC").trim();
 
   const save = useMutation({
     mutationFn: async () => {
@@ -37,6 +39,23 @@ export function SettingsPanel() {
         qc.invalidateQueries({ queryKey: ["team", "meta"] }),
         qc.invalidateQueries({ queryKey: ["dashboard"] }),
       ]);
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Save failed"),
+  });
+
+  const saveTimezone = useMutation({
+    mutationFn: async (tz: string) => {
+      const res = await fetch("/api/team/meta", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ timezone: tz }),
+      });
+      const json = (await res.json()) as ApiResponse<{ team: { id: string } }>;
+      if (!res.ok || !json.ok) throw new Error(!json.ok ? json.error : "Save failed");
+    },
+    onSuccess: async () => {
+      toast.success("Saved");
+      await qc.invalidateQueries({ queryKey: ["team", "meta"] });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Save failed"),
   });
@@ -84,6 +103,46 @@ export function SettingsPanel() {
                   value={teamName ?? data?.team?.name ?? ""}
                   onChange={(e) => setTeamName(e.target.value)}
                 />
+              )}
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="timezone">Timezone</Label>
+              {isLoading ? (
+                <Skeleton className="h-10 w-full" />
+              ) : (
+                <select
+                  id="timezone"
+                  className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                  value={timezoneValue}
+                  onChange={(e) => {
+                    const tz = e.target.value;
+                    setTimezone(tz);
+                    saveTimezone.mutate(tz);
+                  }}
+                  disabled={saveTimezone.isPending}
+                >
+                  {[
+                    "Africa/Lagos",
+                    "Africa/Nairobi",
+                    "Africa/Accra",
+                    "Europe/London",
+                    "Europe/Paris",
+                    "America/New_York",
+                    "America/Chicago",
+                    "America/Los_Angeles",
+                    "America/Sao_Paulo",
+                    "Asia/Dubai",
+                    "Asia/Singapore",
+                    "Asia/Tokyo",
+                    "Asia/Kolkata",
+                    "Australia/Sydney",
+                    "UTC",
+                  ].map((tz) => (
+                    <option key={tz} value={tz}>
+                      {tz}
+                    </option>
+                  ))}
+                </select>
               )}
             </div>
             <div className="grid gap-2">

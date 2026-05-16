@@ -7,6 +7,7 @@ export type ReportDto = {
   id: string;
   title: string;
   status: "DRAFT" | "SUBMITTED" | "REVIEWED";
+  reportDate: string;
   createdAt: string;
   updatedAt: string;
   authorId: string;
@@ -26,8 +27,6 @@ export type ReportDto = {
     firstName: string | null;
     lastName: string | null;
   } | null;
-  periodStart: string | null;
-  periodEnd: string | null;
 };
 
 export function useReports() {

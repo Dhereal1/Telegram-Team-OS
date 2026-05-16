@@ -9,6 +9,7 @@ export type TeamMetaDto = {
     name: string;
     slug: string;
     telegramChatId: string | null;
+    timezone: string;
     createdAt: string;
     updatedAt: string;
     planTier: "FREE" | "PRO" | "BUSINESS";
@@ -38,4 +39,3 @@ export function useTeamMeta() {
     },
   });
 }
-

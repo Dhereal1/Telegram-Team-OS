@@ -6,57 +6,9 @@ import { prisma } from "@/lib/db/prisma";
 import { getRedisConnection, notificationsQueue, type DailyDigestJob, type ReportReminderJob } from "@/lib/queues";
 import { sendDM } from "@/lib/telegram/bot";
 
-function getTeamTimezone(): string {
-  // Team timezone is not modeled in the current Prisma schema; default to UTC.
-  return "UTC";
-}
-
 function dateKeyToday(tz: string) {
   const now = new Date();
   return new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
-}
-
-function utcRangeForDateKey(dateKey: string, tz: string) {
-  // Compute UTC boundaries for the given local date in `tz` without extra deps.
-  const [y, m, d] = dateKey.split("-").map((v) => Number(v));
-  if (!y || !m || !d) {
-    const now = new Date();
-    return { start: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0)), end: new Date() };
-  }
-
-  const start = zonedTimeToUtc(y, m, d, 0, 0, 0, tz);
-  const end = zonedTimeToUtc(y, m, d, 23, 59, 59, tz);
-  end.setUTCMilliseconds(999);
-  return { start, end };
-}
-
-function zonedTimeToUtc(year: number, month: number, day: number, hour: number, minute: number, second: number, tz: string) {
-  const utcGuess = new Date(Date.UTC(year, month - 1, day, hour, minute, second, 0));
-  const offsetMs = tzOffsetMs(utcGuess, tz);
-  return new Date(utcGuess.getTime() - offsetMs);
-}
-
-function tzOffsetMs(date: Date, tz: string) {
-  const dtf = new Intl.DateTimeFormat("en-US", {
-    timeZone: tz,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  });
-  const parts = dtf.formatToParts(date);
-  const get = (type: string) => parts.find((p) => p.type === type)?.value;
-  const y = Number(get("year"));
-  const m = Number(get("month"));
-  const d = Number(get("day"));
-  const hh = Number(get("hour"));
-  const mm = Number(get("minute"));
-  const ss = Number(get("second"));
-  const asUtc = Date.UTC(y, m - 1, d, hh, mm, ss);
-  return asUtc - date.getTime();
 }
 
 export function startCronWorker() {
@@ -66,9 +18,10 @@ export function startCronWorker() {
       if (job.name === "report-reminder") {
         const data = job.data as ReportReminderJob;
         const teamId = data.teamId;
-        const tz = getTeamTimezone();
+        const team = await prisma.team.findUnique({ where: { id: teamId }, select: { timezone: true } });
+        const tz = team?.timezone ?? "UTC";
         const dateKey = dateKeyToday(tz);
-        const range = utcRangeForDateKey(dateKey, tz);
+        const reportDate = new Date(`${dateKey}T00:00:00.000Z`);
 
         const members = await prisma.teamMember.findMany({
           where: { teamId, isActive: true },
@@ -76,16 +29,12 @@ export function startCronWorker() {
           take: 5000,
         });
 
-        const userIds = members.map((m) => m.userId);
-        const reports = await prisma.report.findMany({
-          where: { teamId, status: "SUBMITTED", authorId: { in: userIds }, createdAt: { gte: range.start, lte: range.end } },
-          select: { authorId: true },
-          take: 5000,
-        });
-        const submitted = new Set(reports.map((r) => r.authorId));
-
         for (const m of members) {
-          if (submitted.has(m.userId)) continue;
+          const existing = await prisma.report.findFirst({
+            where: { teamId, authorId: m.userId, reportDate },
+            select: { id: true },
+          });
+          if (existing) continue;
           const telegramId = m.user.telegramId;
           if (!telegramId) continue;
           await notificationsQueue().add(
@@ -107,12 +56,14 @@ export function startCronWorker() {
         const data = job.data as DailyDigestJob;
         const teamId = data.teamId;
 
-        const team = await prisma.team.findUnique({ where: { id: teamId }, select: { id: true, name: true } });
+        const team = await prisma.team.findUnique({ where: { id: teamId }, select: { id: true, name: true, timezone: true } });
         if (!team) return;
 
-        const tz = getTeamTimezone();
+        const tz = team.timezone ?? "UTC";
         const dateKey = dateKeyToday(tz);
-        const range = utcRangeForDateKey(dateKey, tz);
+        const reportDate = new Date(`${dateKey}T00:00:00.000Z`);
+        const startOfDay = new Date(`${dateKey}T00:00:00.000Z`);
+        const endOfDay = new Date(`${dateKey}T23:59:59.999Z`);
 
         const owner = await prisma.teamMember.findFirst({
           where: { teamId, isActive: true, role: { key: { in: ["FOUNDER", "ADMIN"] } } },
@@ -123,14 +74,14 @@ export function startCronWorker() {
         if (!ownerTg) return;
 
         const reports = await prisma.report.findMany({
-          where: { teamId, status: "SUBMITTED", createdAt: { gte: range.start, lte: range.end } },
+          where: { teamId, reportDate },
           select: { body: true, author: { select: { firstName: true, username: true } } },
           take: 50,
           orderBy: { createdAt: "asc" },
         });
 
         const completed = await prisma.task.findMany({
-          where: { teamId, status: "DONE", completedAt: { gte: range.start, lte: range.end } },
+          where: { teamId, status: "DONE", completedAt: { gte: startOfDay, lt: endOfDay } },
           select: { id: true },
           take: 5000,
         });
@@ -173,4 +124,3 @@ export function startCronWorker() {
 
   return worker;
 }
-

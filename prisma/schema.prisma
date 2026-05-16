@@ -111,6 +111,7 @@ model Team {
   name          String
   slug          String  @unique
   telegramChatId BigInt?
+  timezone      String  @default("UTC")
 
   planTier        PlanTier @default(FREE)
   planStartedAt   DateTime?
@@ -243,12 +244,11 @@ model Report {
   teamId   String
   authorId String
 
+  reportDate DateTime @db.Date
+
   title  String
   body   String
   status ReportStatus @default(DRAFT)
-
-  periodStart DateTime?
-  periodEnd   DateTime?
 
   reviewNotes String?
   reviewedAt  DateTime?
@@ -263,6 +263,7 @@ model Report {
 
   aiInsights AIInsight[]
 
+  @@unique([teamId, authorId, reportDate])
   @@index([teamId, createdAt])
   @@index([authorId, createdAt])
   @@index([reviewedById])

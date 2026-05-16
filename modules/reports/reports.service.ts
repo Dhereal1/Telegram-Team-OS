@@ -17,18 +17,16 @@ export function getReport(teamId: string, reportId: string) {
 export async function createReport(input: {
   teamId: string;
   actorId: string;
+  reportDate: Date;
   title: string;
   body: string;
-  periodStart?: Date;
-  periodEnd?: Date;
 }) {
   const report = await repo.createReport({
     teamId: input.teamId,
     authorId: input.actorId,
+    reportDate: input.reportDate,
     title: input.title,
     body: input.body,
-    periodStart: input.periodStart,
-    periodEnd: input.periodEnd,
   });
 
   void recordUsage({ teamId: input.teamId, key: "reports" }).catch(() => {});

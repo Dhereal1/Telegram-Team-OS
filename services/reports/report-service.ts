@@ -13,16 +13,14 @@ export async function createReport(input: {
   authorId: string;
   title: string;
   body: string;
-  periodStart?: Date;
-  periodEnd?: Date;
+  reportDate: Date;
 }) {
   return v2.createReport({
     teamId: input.teamId,
     actorId: input.authorId,
+    reportDate: input.reportDate,
     title: input.title,
     body: input.body,
-    periodStart: input.periodStart,
-    periodEnd: input.periodEnd,
   });
 }
 
@@ -39,4 +37,3 @@ export async function reviewReport(input: {
     reviewNotes: input.reviewNotes ?? undefined,
   });
 }
-

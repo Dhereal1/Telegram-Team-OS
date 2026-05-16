@@ -8,11 +8,10 @@ export const reportSelect = {
   title: true,
   body: true,
   status: true,
+  reportDate: true,
   createdAt: true,
   updatedAt: true,
   authorId: true,
-  periodStart: true,
-  periodEnd: true,
   reviewNotes: true,
   reviewedAt: true,
   reviewedById: true,
@@ -38,20 +37,25 @@ export function listReports(teamId: string, options?: { take?: number; cursorId?
 export function createReport(input: {
   teamId: string;
   authorId: string;
+  reportDate: Date;
   title: string;
   body: string;
-  periodStart?: Date;
-  periodEnd?: Date;
 }) {
-  return prisma.report.create({
-    data: {
+  return prisma.report.upsert({
+    where: { teamId_authorId_reportDate: { teamId: input.teamId, authorId: input.authorId, reportDate: input.reportDate } },
+    create: {
       teamId: input.teamId,
       authorId: input.authorId,
+      reportDate: input.reportDate,
       title: input.title,
       body: input.body,
-      periodStart: input.periodStart,
-      periodEnd: input.periodEnd,
       status: "SUBMITTED",
+    },
+    update: {
+      title: input.title,
+      body: input.body,
+      status: "SUBMITTED",
+      updatedAt: new Date(),
     },
     select: reportSelect,
   });
@@ -89,4 +93,3 @@ export function getLatestSummary(teamId: string, reportId: string) {
     select: { content: true },
   });
 }
-

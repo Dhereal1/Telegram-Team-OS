@@ -10,6 +10,7 @@ import { createReportSchema } from "@/lib/validators/reports";
 import { reviewReportSchema } from "@/lib/validators/reports-review";
 import * as reportsService from "@/modules/reports/reports.service";
 import { HttpError } from "@/packages/core/http-error";
+import { prisma } from "@/lib/db/prisma";
 
 export const reportsGET = withApi(async (request) => {
   const obs = obsStart(request, "/api/reports");
@@ -43,13 +44,20 @@ export const reportsPOST = withApi(async (request) => {
 
     const idem = await beginIdempotency({ request, teamId: session.teamId!, route: "/api/reports:POST" });
     const body = createReportSchema.parse(await request.json());
+
+    const team = await prisma.team.findUnique({ where: { id: session.teamId! }, select: { timezone: true } });
+    const tz = team?.timezone ?? "UTC";
+    const dateKey = new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(
+      new Date(),
+    );
+    const reportDate = new Date(`${dateKey}T00:00:00.000Z`);
+
     const report = await reportsService.createReport({
       teamId: session.teamId!,
       actorId: session.userId,
+      reportDate,
       title: body.title,
       body: body.body,
-      periodStart: body.periodStart ? new Date(body.periodStart) : undefined,
-      periodEnd: body.periodEnd ? new Date(body.periodEnd) : undefined,
     });
     await finishIdempotency({ redisKey: idem?.redisKey ?? null, result: { report } });
     obsEnd(obs, 201);
@@ -102,4 +110,3 @@ export const reportIdPATCH = withApi(async (request, ctx: { params: Promise<{ re
     throw e;
   }
 });
-

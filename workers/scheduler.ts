@@ -4,20 +4,15 @@ import "@/modules/bootstrap/server";
 import { prisma } from "@/lib/db/prisma";
 import { cronQueue } from "@/lib/queues";
 
-function getTeamTimezone(): string {
-  // Team timezone is not modeled in the current Prisma schema; default to UTC.
-  return "UTC";
-}
-
 export async function scheduleRecurringJobs() {
   const teams = await prisma.team.findMany({
     where: { telegramChatId: { not: null } },
-    select: { id: true },
+    select: { id: true, timezone: true },
     take: 5000,
   });
 
   for (const t of teams) {
-    const tz = getTeamTimezone();
+    const tz = t.timezone ?? "UTC";
     await cronQueue().add(
       "report-reminder",
       { teamId: t.id },
@@ -44,4 +39,3 @@ export async function scheduleRecurringJobs() {
   console.log(JSON.stringify({ ts: new Date().toISOString(), type: "worker.scheduler", scheduledTeams: teams.length }));
   return teams.length;
 }
-

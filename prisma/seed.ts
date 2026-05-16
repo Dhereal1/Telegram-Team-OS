@@ -89,6 +89,7 @@ async function main() {
     data: {
       teamId: team.id,
       authorId: staff.id,
+      reportDate: new Date(new Date().toISOString().slice(0, 10) + "T00:00:00.000Z"),
       title: "Daily Ops Report",
       body: "Completed webhook smoke test. Blocked on prod env vars. Next: task CRUD polish.",
       status: "SUBMITTED",

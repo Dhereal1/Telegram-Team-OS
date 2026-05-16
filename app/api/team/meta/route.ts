@@ -12,6 +12,7 @@ export const dynamic = "force-dynamic";
 
 const updateTeamMetaSchema = z.object({
   name: z.string().min(2).max(80).optional(),
+  timezone: z.string().min(1).optional(),
 });
 
 const teamSelect = {
@@ -19,10 +20,20 @@ const teamSelect = {
   name: true,
   slug: true,
   telegramChatId: true,
+  timezone: true,
   createdAt: true,
   updatedAt: true,
   planTier: true,
 } as const;
+
+function isValidTimezone(tz: string): boolean {
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export async function GET(request: Request) {
   const obs = obsStart(request, "/api/team/meta");
@@ -39,6 +50,7 @@ export async function GET(request: Request) {
       name: string;
       slug: string;
       telegramChatId: bigint | null;
+      timezone: string;
       createdAt: Date;
       updatedAt: Date;
       planTier: "FREE" | "PRO" | "BUSINESS";
@@ -77,17 +89,25 @@ export async function PATCH(request: Request) {
     await enforceRateLimit({ request, preset: "mutation", identity: `u:${session.userId}`, key: "mut" });
 
     const body = updateTeamMetaSchema.parse(await request.json());
-    if (!body.name) throw new HttpError("No updates provided", 400, "NO_UPDATES");
+    if (!body.name && !body.timezone) throw new HttpError("No updates provided", 400, "NO_UPDATES");
+
+    if (body.timezone && !isValidTimezone(body.timezone)) {
+      throw new HttpError("Invalid timezone", 400, "INVALID_TIMEZONE");
+    }
 
     const updated = (await prisma.team.update({
       where: { id: session.teamId! },
-      data: { name: body.name.trim() },
+      data: {
+        ...(body.name ? { name: body.name.trim() } : {}),
+        ...(body.timezone ? { timezone: body.timezone } : {}),
+      },
       select: teamSelect as unknown as never,
     })) as unknown as {
       id: string;
       name: string;
       slug: string;
       telegramChatId: bigint | null;
+      timezone: string;
       createdAt: Date;
       updatedAt: Date;
       planTier: "FREE" | "PRO" | "BUSINESS";
@@ -100,7 +120,7 @@ export async function PATCH(request: Request) {
       action: "team.updated",
       entityType: "Team",
       entityId: String(updated.id),
-      metadata: { name: String(updated.name) },
+      metadata: { name: String(updated.name), timezone: String(updated.timezone) },
     });
 
     obsEnd(obs, 200);
