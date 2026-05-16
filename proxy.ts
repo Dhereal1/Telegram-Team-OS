@@ -3,7 +3,7 @@ import { AUTH_COOKIE_NAME } from "@/lib/auth/cookies";
 
 const PROTECTED_PREFIXES = ["/dashboard", "/tasks", "/reports", "/team", "/analytics", "/settings"];
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const isProtected = PROTECTED_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
   if (!isProtected) return NextResponse.next();
