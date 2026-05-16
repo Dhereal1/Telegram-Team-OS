@@ -8,6 +8,7 @@ import { enforceRateLimit } from "@/lib/ratelimit";
 import { recordPublicApiUsage } from "@/api-platform/usage/record-usage";
 import { obsEnd, obsError, obsStart } from "@/lib/obs/server";
 import { HttpError } from "@/packages/core/http-error";
+import { emitDomainEvent } from "@/modules/events/event-dispatcher";
 
 export const dynamic = "force-dynamic";
 
@@ -98,6 +99,13 @@ export const POST = withApi(async (request) => {
         dueAt: body.dueAt ? new Date(body.dueAt) : null,
       },
       select: { id: true, title: true, status: true, priority: true, createdAt: true },
+    });
+
+    void emitDomainEvent("task.created", {
+      teamId: auth.teamId,
+      actorId: auth.actorUserId,
+      taskId: task.id,
+      title: task.title,
     });
 
     ok = true;
