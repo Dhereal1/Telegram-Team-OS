@@ -34,6 +34,17 @@ export async function scheduleRecurringJobs() {
         removeOnFail: 50,
       },
     );
+
+    await cronQueue().add(
+      "weekly-digest",
+      { teamId: t.id },
+      {
+        jobId: `weekly-digest-${t.id}`,
+        repeat: { pattern: "0 9 * * 1", tz },
+        removeOnComplete: 10,
+        removeOnFail: 50,
+      },
+    );
   }
 
   console.log(JSON.stringify({ ts: new Date().toISOString(), type: "worker.scheduler", scheduledTeams: teams.length }));

@@ -7,6 +7,7 @@ import { env } from "@/lib/env";
 export type NotificationJob = { teamId: string; userId: string; telegramUserId: bigint | string; message: string };
 export type ReportReminderJob = { teamId: string };
 export type DailyDigestJob = { teamId: string };
+export type WeeklyDigestJob = { teamId: string };
 
 declare global {
   var __teamosWorkerRedis: IORedis | undefined;

@@ -17,6 +17,7 @@ export async function registerBotCommands() {
     { command: "done", description: "Mark a task done: /done taskId" },
     { command: "approve", description: "Approve a pending member: /approve @user" },
     { command: "remove", description: "Remove a member: /remove @user" },
+    { command: "summary", description: "Team performance summary (admin only)" },
     { command: "help", description: "Show available commands" },
   ];
 

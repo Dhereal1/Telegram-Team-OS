@@ -3,9 +3,10 @@ import "@/modules/bootstrap/server";
 
 import { Worker } from "bullmq";
 import { prisma } from "@/lib/db/prisma";
-import { getRedisConnection, notificationsQueue, type DailyDigestJob, type ReportReminderJob } from "@/lib/queues";
+import { getRedisConnection, notificationsQueue, type DailyDigestJob, type ReportReminderJob, type WeeklyDigestJob } from "@/lib/queues";
 import { sendDM } from "@/lib/telegram/bot";
 import { getMissedReportsToday } from "@/lib/reports/missed-reports";
+import { calculateTeamScores } from "@/lib/scores/calculate-team-scores";
 
 function dateKeyToday(tz: string) {
   const now = new Date();
@@ -99,6 +100,70 @@ export function startCronWorker() {
         ].join("\n");
 
         await sendDM(ownerTg, msg);
+        return;
+      }
+
+      if (job.name === "weekly-digest") {
+        const data = job.data as WeeklyDigestJob;
+        const teamId = data.teamId;
+
+        const team = await prisma.team.findUnique({
+          where: { id: teamId },
+          select: { id: true, name: true, timezone: true },
+        });
+        if (!team) return;
+
+        const founder = await prisma.teamMember.findFirst({
+          where: { teamId, isActive: true, status: "ACTIVE", role: { key: "FOUNDER" } },
+          select: { joinedAt: true, user: { select: { telegramId: true, firstName: true } } },
+        });
+        const founderTg = founder?.user.telegramId;
+        if (!founderTg) return;
+
+        const tz = team.timezone ?? "UTC";
+        const dateKey = dateKeyToday(tz);
+        const startOfToday = new Date(`${dateKey}T00:00:00.000Z`);
+        const startOfWeek = new Date(startOfToday);
+        startOfWeek.setUTCDate(startOfWeek.getUTCDate() - 6);
+
+        const [scores, tasksCompleted, reportsSubmitted, newMembers] = await Promise.all([
+          calculateTeamScores(teamId, 7),
+          prisma.task.count({ where: { teamId, status: "DONE", completedAt: { gte: startOfWeek, lte: startOfToday } } }),
+          prisma.report.count({ where: { teamId, reportDate: { gte: startOfWeek, lte: startOfToday } } }),
+          prisma.teamMember.count({ where: { teamId, joinedAt: { gte: startOfWeek, lte: startOfToday }, isActive: true } }),
+        ]);
+
+        const top = scores.slice(0, 3).map((s) => {
+          const name = s.username ? `@${s.username}` : s.firstName ?? s.userId.slice(0, 6);
+          return `- ${name}: ${s.totalScore}/100 (${s.label})`;
+        });
+
+        const bottom = scores[scores.length - 1];
+        const bottomLine =
+          bottom && bottom.totalScore < 60
+            ? (() => {
+                const name = bottom.username ? `@${bottom.username}` : bottom.firstName ?? bottom.userId.slice(0, 6);
+                return `\nFlag: ${name} is trending low (${bottom.totalScore}/100). Consider a quick check-in.`;
+              })()
+            : "";
+
+        const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? "").replace(/\/$/, "");
+        const msg = [
+          `Weekly digest for ${team.name}`,
+          "",
+          "Team performance this week:",
+          ...(top.length ? top : ["(no active members)"]),
+          bottomLine,
+          "",
+          "Activity:",
+          `• ${reportsSubmitted} reports submitted`,
+          `• ${tasksCompleted} tasks completed`,
+          `• ${newMembers} new members`,
+          "",
+          `Full report: ${appUrl ? `${appUrl}/dashboard` : "[NEXT_PUBLIC_APP_URL]/dashboard"}`,
+        ].join("\n");
+
+        await sendDM(founderTg, msg);
         return;
       }
     },

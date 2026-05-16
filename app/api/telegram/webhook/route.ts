@@ -16,6 +16,7 @@ import { handleStart } from "@/lib/telegram/commands/handlers/start";
 import { handleApprove } from "@/lib/telegram/commands/handlers/approve";
 import { handleRemove } from "@/lib/telegram/commands/handlers/remove";
 import { handleMyTasks } from "@/lib/telegram/commands/handlers/mytasks";
+import { handleSummary } from "@/lib/telegram/commands/handlers/summary";
 
 export const dynamic = "force-dynamic";
 
@@ -146,6 +147,7 @@ export async function POST(request: Request) {
         else if (cmd.command === "help") out = await handleHelp(ctx);
         else if (cmd.command === "approve") out = await handleApprove(ctx);
         else if (cmd.command === "remove") out = await handleRemove(ctx);
+        else if (cmd.command === "summary") out = await handleSummary(ctx);
         else out = "Unknown command. Use /help to see available commands.";
 
         await sendMessage(chatId, out);
