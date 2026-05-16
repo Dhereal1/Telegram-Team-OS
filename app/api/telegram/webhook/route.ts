@@ -13,6 +13,9 @@ import { handleTasks } from "@/lib/telegram/commands/handlers/tasks";
 import { handleDone } from "@/lib/telegram/commands/handlers/done";
 import { handleHelp } from "@/lib/telegram/commands/handlers/help";
 import { handleStart } from "@/lib/telegram/commands/handlers/start";
+import { handleApprove } from "@/lib/telegram/commands/handlers/approve";
+import { handleRemove } from "@/lib/telegram/commands/handlers/remove";
+import { handleMyTasks } from "@/lib/telegram/commands/handlers/mytasks";
 
 export const dynamic = "force-dynamic";
 
@@ -138,9 +141,11 @@ export async function POST(request: Request) {
         if (cmd.command === "assign") out = await handleAssign(ctx);
         else if (cmd.command === "report") out = await handleReport(ctx);
         else if (cmd.command === "tasks") out = await handleTasks(ctx);
-        else if (cmd.command === "mytasks") out = await handleTasks(ctx);
+        else if (cmd.command === "mytasks") out = await handleMyTasks(ctx);
         else if (cmd.command === "done") out = await handleDone(ctx);
         else if (cmd.command === "help") out = await handleHelp(ctx);
+        else if (cmd.command === "approve") out = await handleApprove(ctx);
+        else if (cmd.command === "remove") out = await handleRemove(ctx);
         else out = "Unknown command. Use /help to see available commands.";
 
         await sendMessage(chatId, out);

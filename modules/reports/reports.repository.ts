@@ -23,10 +23,10 @@ export const reportSelect = {
   },
 } satisfies Prisma.ReportSelect;
 
-export function listReports(teamId: string, options?: { take?: number; cursorId?: string | null }) {
+export function listReports(teamId: string, options?: { take?: number; cursorId?: string | null; reportDate?: Date | null }) {
   const take = options?.take ?? 30;
   return prisma.report.findMany({
-    where: { teamId },
+    where: { teamId, ...(options?.reportDate ? { reportDate: options.reportDate } : {}) },
     orderBy: [{ updatedAt: "desc" }],
     take,
     ...(options?.cursorId ? { cursor: { id: options.cursorId }, skip: 1 } : {}),

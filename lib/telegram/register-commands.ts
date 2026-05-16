@@ -15,6 +15,8 @@ export async function registerBotCommands() {
     { command: "tasks", description: "View open tasks" },
     { command: "mytasks", description: "View your assigned tasks" },
     { command: "done", description: "Mark a task done: /done taskId" },
+    { command: "approve", description: "Approve a pending member: /approve @user" },
+    { command: "remove", description: "Remove a member: /remove @user" },
     { command: "help", description: "Show available commands" },
   ];
 
@@ -26,4 +28,3 @@ export async function registerBotCommands() {
   const json = (await res.json()) as { ok: boolean; description?: string };
   if (!json.ok) throw new Error(json.description ?? "Telegram setMyCommands failed");
 }
-

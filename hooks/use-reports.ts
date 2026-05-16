@@ -29,11 +29,11 @@ export type ReportDto = {
   } | null;
 };
 
-export function useReports() {
+export function useReports(date?: "today" | null) {
   return useQuery({
-    queryKey: ["reports"],
+    queryKey: ["reports", date ?? "all"],
     queryFn: async (): Promise<{ reports: ReportDto[] }> => {
-      const res = await fetch("/api/reports");
+      const res = await fetch(date === "today" ? "/api/reports?date=today" : "/api/reports");
       const json = (await res.json()) as ApiResponse<{ reports: ReportDto[] }>;
       if (!res.ok || !json.ok) throw new Error(!json.ok ? json.error : "Failed to load reports");
       return json.data;

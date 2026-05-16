@@ -18,7 +18,19 @@ export const reportsGET = withApi(async (request) => {
     const session = await requireApiSession();
     obs.userId = session.userId;
     obs.teamId = session.teamId;
-    const reports = await reportsService.listReports(session.teamId!);
+    const url = new URL(request.url);
+    const date = url.searchParams.get("date");
+    let reportDate: Date | null = null;
+    if (date === "today") {
+      const team = await prisma.team.findUnique({ where: { id: session.teamId! }, select: { timezone: true } });
+      const tz = team?.timezone ?? "UTC";
+      const dateKey = new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(
+        new Date(),
+      );
+      reportDate = new Date(`${dateKey}T00:00:00.000Z`);
+    }
+
+    const reports = await reportsService.listReports(session.teamId!, { reportDate });
     obsEnd(obs, 200);
     return jsonOk({ reports }, { headers: { "x-request-id": obs.requestId } });
   } catch (e: unknown) {

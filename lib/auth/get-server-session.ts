@@ -26,9 +26,9 @@ export async function getServerSession(): Promise<ServerSession | null> {
   if (session.teamId) {
     const tm = await prisma.teamMember.findUnique({
       where: { teamId_userId: { teamId: session.teamId, userId: session.userId } },
-      select: { role: { select: { key: true } }, isActive: true },
+      select: { role: { select: { key: true } }, isActive: true, status: true },
     });
-    roleKey = tm?.isActive ? (tm.role.key as ServerSession["roleKey"]) : null;
+    roleKey = tm?.isActive && tm.status === "ACTIVE" ? (tm.role.key as ServerSession["roleKey"]) : null;
   }
 
   const h = await headers();

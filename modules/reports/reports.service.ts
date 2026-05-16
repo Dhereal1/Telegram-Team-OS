@@ -6,7 +6,7 @@ import * as repo from "@/modules/reports/reports.repository";
 import { recordUsage } from "@/services/billing/billing-service";
 import { summarizeAndStore } from "@/services/ai/ai-service";
 
-export function listReports(teamId: string, options?: { take?: number; cursorId?: string | null }) {
+export function listReports(teamId: string, options?: { take?: number; cursorId?: string | null; reportDate?: Date | null }) {
   return repo.listReports(teamId, options);
 }
 

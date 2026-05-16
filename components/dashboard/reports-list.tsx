@@ -9,8 +9,8 @@ import { useReports } from "@/hooks/use-reports";
 import { NewReportDialog } from "@/components/dashboard/new-report-dialog";
 import { formatDateTime, formatPersonName, formatRelativeTime } from "@/lib/ops";
 
-export function ReportsList() {
-  const { data, isLoading, error } = useReports();
+export function ReportsList(props: { date?: "today" | null }) {
+  const { data, isLoading, error } = useReports(props.date ?? null);
   const reports = data?.reports ?? [];
 
   return (

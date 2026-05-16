@@ -5,6 +5,7 @@ import { Worker } from "bullmq";
 import { prisma } from "@/lib/db/prisma";
 import { getRedisConnection, notificationsQueue, type DailyDigestJob, type ReportReminderJob } from "@/lib/queues";
 import { sendDM } from "@/lib/telegram/bot";
+import { getMissedReportsToday } from "@/lib/reports/missed-reports";
 
 function dateKeyToday(tz: string) {
   const now = new Date();
@@ -18,24 +19,10 @@ export function startCronWorker() {
       if (job.name === "report-reminder") {
         const data = job.data as ReportReminderJob;
         const teamId = data.teamId;
-        const team = await prisma.team.findUnique({ where: { id: teamId }, select: { timezone: true } });
-        const tz = team?.timezone ?? "UTC";
-        const dateKey = dateKeyToday(tz);
-        const reportDate = new Date(`${dateKey}T00:00:00.000Z`);
-
-        const members = await prisma.teamMember.findMany({
-          where: { teamId, isActive: true },
-          select: { userId: true, user: { select: { telegramId: true } } },
-          take: 5000,
-        });
-
-        for (const m of members) {
-          const existing = await prisma.report.findFirst({
-            where: { teamId, authorId: m.userId, reportDate },
-            select: { id: true },
-          });
-          if (existing) continue;
-          const telegramId = m.user.telegramId;
+        const missed = await getMissedReportsToday(teamId);
+        for (const m of missed) {
+          const user = await prisma.user.findUnique({ where: { id: m.userId }, select: { telegramId: true } });
+          const telegramId = user?.telegramId;
           if (!telegramId) continue;
           await notificationsQueue().add(
             "dm",

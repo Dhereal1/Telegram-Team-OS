@@ -6,6 +6,7 @@ import { formatPersonName } from "@/lib/ops";
 import { listRecentActivity } from "@/services/activity/activity-service";
 import { getOrCreateDailyDigest } from "@/services/ai/ai-service";
 import { cacheGetJson, cacheSetJson } from "@/modules/performance/cache";
+import { getMissedReportsToday } from "@/lib/reports/missed-reports";
 
 async function getDashboardUncached(teamId: string, options?: { userId?: string; roleKey?: RoleKey | null }) {
   const now = new Date();
@@ -36,7 +37,7 @@ async function getDashboardUncached(teamId: string, options?: { userId?: string;
     overdueTasks,
     blockedTaskList,
     activeMembers,
-    todayReportAuthors,
+    missedReports,
     myOpenTasks,
     inviteCount,
     totalTaskCount,
@@ -107,7 +108,7 @@ async function getDashboardUncached(teamId: string, options?: { userId?: string;
       },
     }),
     prisma.teamMember.findMany({
-      where: { teamId, isActive: true, role: { key: { in: ["ADMIN", "STAFF"] } } },
+      where: { teamId, isActive: true, status: "ACTIVE", role: { key: { in: ["ADMIN", "STAFF"] } } },
       orderBy: { joinedAt: "asc" },
       select: {
         id: true,
@@ -116,10 +117,7 @@ async function getDashboardUncached(teamId: string, options?: { userId?: string;
         user: { select: { id: true, username: true, firstName: true, lastName: true } },
       },
     }),
-    prisma.report.findMany({
-      where: { teamId, createdAt: { gte: startOfTodayUtc } },
-      select: { authorId: true },
-    }),
+    getMissedReportsToday(teamId),
     options?.userId
       ? prisma.task.count({
           where: {
@@ -150,8 +148,9 @@ async function getDashboardUncached(teamId: string, options?: { userId?: string;
     telegramChatId: teamSafe.telegramChatId ? String(teamSafe.telegramChatId) : null,
   };
 
-  const submittedToday = new Set(todayReportAuthors.map((report) => report.authorId));
-  const missingReports = activeMembers.filter((member) => !submittedToday.has(member.user.id));
+  const missingReports = missedReports;
+  const missedSet = new Set(missedReports.map((m) => m.userId));
+  const missingMembers = activeMembers.filter((m) => missedSet.has(m.user.id));
   const completionRate = taskCompleted + taskPending === 0 ? 100 : Math.round((taskCompleted / (taskCompleted + taskPending)) * 100);
 
   const isDefaultTeamName = teamSafe.name === "Team" || /'s Team$/i.test(teamSafe.name);
@@ -210,6 +209,7 @@ async function getDashboardUncached(teamId: string, options?: { userId?: string;
       myOpenTasks,
       members,
     },
+    missedReports,
     onboarding: {
       ...onboarding,
       complete: onboardingComplete,
@@ -239,7 +239,7 @@ async function getDashboardUncached(teamId: string, options?: { userId?: string;
         ...task,
         assigneeLabel: formatPersonName(task.assignedTo),
       })),
-      missingReports: missingReports.map((member) => ({
+      missingReports: missingMembers.map((member) => ({
         id: member.id,
         name: formatPersonName(member.user),
         roleKey: member.role.key,

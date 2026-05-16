@@ -7,13 +7,16 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useDashboard } from "@/hooks/use-dashboard";
 import { useAuthStore } from "@/store/auth-store";
 import { cn } from "@/lib/utils";
+import { useRouter } from "next/navigation";
 
 export function StatsGrid() {
   const { data, isLoading, error } = useDashboard();
   const roleKey = useAuthStore((state) => state.user?.roleKey ?? null);
+  const router = useRouter();
   const s = data?.dashboard.stats;
   const summary = data?.dashboard.summary;
   const attention = data?.dashboard.attention;
+  const missedReports = data?.dashboard.missedReports ?? [];
 
   return (
     <div className="space-y-4">
@@ -102,7 +105,7 @@ export function StatsGrid() {
         </div>
       </Card>
 
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
         {[
           {
             label: roleKey === "STAFF" ? "My Open Tasks" : "Open Tasks",
@@ -112,12 +115,32 @@ export function StatsGrid() {
           },
           { label: "Due Today", value: s?.dueToday, hint: "Execution window", icon: Clock3 },
           { label: "Reports Today", value: s?.reportsToday, hint: "Submitted since UTC 00:00", icon: FileWarning },
+          {
+            label: "Missed Reports",
+            value: missedReports.length,
+            hint: missedReports.length > 0 ? "today" : "All submitted",
+            icon: AlertTriangle,
+            tone: missedReports.length > 0 ? "amber" : "green",
+            href: "/reports?date=today",
+          },
           { label: "Completed", value: s?.taskCompleted, hint: "Delivered work", icon: CheckCircle2 },
           { label: "Team Members", value: s?.members, hint: "Active operators", icon: ArrowRight },
         ].map((item) => {
           const Icon = item.icon;
           return (
-            <Card key={item.label} className="rounded-3xl border-border/70 p-4 shadow-sm">
+            <Card
+              key={item.label}
+              className={cn(
+                "cursor-default rounded-3xl border-border/70 p-4 shadow-sm",
+                (item as { href?: string }).href && "cursor-pointer hover:bg-card/60",
+                (item as { tone?: string }).tone === "amber" && "border-amber-500/30",
+                (item as { tone?: string }).tone === "green" && "border-emerald-500/30",
+              )}
+              onClick={() => {
+                const href = (item as { href?: string }).href;
+                if (href) router.push(href);
+              }}
+            >
               <div className="flex items-center justify-between">
                 <div className="text-sm text-muted-foreground">{item.label}</div>
                 <Icon className="size-4 text-muted-foreground" />
@@ -125,7 +148,15 @@ export function StatsGrid() {
               <div className="mt-3 text-2xl font-semibold tracking-tight">
                 {isLoading ? <Skeleton className="h-7 w-12" /> : (item.value ?? 0)}
               </div>
-              <div className="mt-1 text-xs text-muted-foreground">{item.hint}</div>
+              <div
+                className={cn(
+                  "mt-1 text-xs text-muted-foreground",
+                  (item as { tone?: string }).tone === "amber" && "text-amber-600 dark:text-amber-300",
+                  (item as { tone?: string }).tone === "green" && "text-emerald-600 dark:text-emerald-300",
+                )}
+              >
+                {item.hint}
+              </div>
             </Card>
           );
         })}

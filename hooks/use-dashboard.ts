@@ -63,6 +63,7 @@ export type DashboardDto = {
       title: string | null;
     }>;
   };
+  missedReports: Array<{ userId: string; firstName: string | null; username: string | null }>;
   activity: Array<{
     id: string;
     action: string;
