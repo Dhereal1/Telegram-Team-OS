@@ -14,12 +14,9 @@ type TelegramNotificationPayload = {
 export async function deliverTelegramNotification(payload: unknown) {
   const p = payload as Partial<TelegramNotificationPayload>;
   if (!p.chatId || !p.text) throw new HttpError("Invalid telegram notification payload", 400, "INVALID_PAYLOAD");
-  await sendMessage({
-    chat_id: p.chatId,
-    text: p.text,
+  await sendMessage(BigInt(p.chatId), p.text, {
     parse_mode: p.parseMode ?? "HTML",
     disable_web_page_preview: p.disableWebPreview ?? true,
     reply_markup: p.replyMarkup,
   });
 }
-

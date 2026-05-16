@@ -57,9 +57,7 @@ async function sendRichMessage(input: {
   text: string;
   replyMarkup?: unknown;
 }) {
-  await sendMessage({
-    chat_id: input.chatId,
-    text: input.text,
+  await sendMessage(input.chatId, input.text, {
     parse_mode: "HTML",
     disable_web_page_preview: true,
     reply_markup: input.replyMarkup,
@@ -201,7 +199,7 @@ export async function handleWebhookUpdate(update: TelegramUpdate) {
   const callbackId = update.callback_query?.id;
 
   if (callbackId) {
-    await answerCallbackQuery({ callback_query_id: callbackId }).catch(() => {});
+    await answerCallbackQuery(callbackId).catch(() => {});
   }
 
   const normalizedText = text.startsWith("cmd:tasks")
