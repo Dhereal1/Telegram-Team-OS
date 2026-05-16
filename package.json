@@ -21,7 +21,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "worker": "tsx workers/worker.ts",
+    "worker": "tsx workers/index.ts",
     "bot:poll": "tsx workers/telegram-poll.ts"
   },
   "dependencies": {

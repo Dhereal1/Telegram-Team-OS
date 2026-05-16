@@ -1,7 +1,7 @@
 import "server-only";
 
 import { prisma } from "@/lib/db/prisma";
-import { sendDM } from "@/lib/telegram/bot";
+import { notificationsQueue } from "@/lib/queues";
 
 export type CommandContext = { teamId: string; actorUserId: string; args: string[]; chatId: bigint };
 
@@ -36,7 +36,7 @@ export async function handleAssign(ctx: CommandContext): Promise<string> {
 
   if (!member?.user) return `Could not find @${username} in this workspace`;
 
-  await prisma.task.create({
+  const created = await prisma.task.create({
     data: {
       teamId: ctx.teamId,
       createdById: ctx.actorUserId,
@@ -45,13 +45,30 @@ export async function handleAssign(ctx: CommandContext): Promise<string> {
       status: "TODO",
       dueAt: dueAt ?? undefined,
     },
-    select: { id: true },
+    select: { id: true, title: true, dueAt: true },
   });
 
+  const actor = await prisma.user.findUnique({
+    where: { id: ctx.actorUserId },
+    select: { username: true },
+  });
+
+  const dueSuffix = created.dueAt
+    ? ` (due ${created.dueAt.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })})`
+    : "";
+
   if (member.user.telegramId) {
-    await sendDM(member.user.telegramId, `New task assigned: ${title}`);
+    await notificationsQueue().add(
+      "dm",
+      {
+        teamId: ctx.teamId,
+        userId: member.user.id,
+        telegramUserId: member.user.telegramId,
+        message: `You have a new task assigned by @${actor?.username ?? "admin"}: ${created.title}${dueSuffix}`,
+      },
+      { removeOnComplete: 1000, removeOnFail: 5000, attempts: 5, backoff: { type: "exponential", delay: 10_000 } },
+    );
   }
 
   return `Task assigned to @${username}: ${title}`;
 }
-

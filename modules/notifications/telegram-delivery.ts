@@ -14,7 +14,15 @@ type TelegramNotificationPayload = {
 export async function deliverTelegramNotification(payload: unknown) {
   const p = payload as Partial<TelegramNotificationPayload>;
   if (!p.chatId || !p.text) throw new HttpError("Invalid telegram notification payload", 400, "INVALID_PAYLOAD");
-  await sendMessage(BigInt(p.chatId), p.text, {
+  const chatId =
+    typeof p.chatId === "number"
+      ? p.chatId
+      : typeof p.chatId === "string" && /^\d+$/.test(p.chatId)
+        ? BigInt(p.chatId)
+        : null;
+  if (!chatId) throw new HttpError("Unsupported Telegram chatId format", 400, "INVALID_PAYLOAD");
+
+  await sendMessage(chatId, p.text, {
     parse_mode: p.parseMode ?? "HTML",
     disable_web_page_preview: p.disableWebPreview ?? true,
     reply_markup: p.replyMarkup,
