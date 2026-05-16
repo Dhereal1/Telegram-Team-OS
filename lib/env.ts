@@ -8,6 +8,7 @@ export const env = createEnv({
   server: {
     DATABASE_URL: z.string().min(1),
     TELEGRAM_BOT_TOKEN: z.string().min(1),
+    // Required in production to validate Telegram webhook origin.
     TELEGRAM_WEBHOOK_SECRET: z.string().optional(),
     // BullMQ / durable processing (Redis protocol over TCP)
     REDIS_URL: z.string().min(1).optional(),

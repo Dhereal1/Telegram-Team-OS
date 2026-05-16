@@ -3,6 +3,7 @@ import { jsonErr, jsonOk } from "@/lib/utils/api";
 import { handleWebhookUpdate } from "@/services/telegram/telegram-service";
 import { obsEnd, obsError, obsStart, obsLog } from "@/lib/obs/server";
 import { enforceRateLimit } from "@/lib/ratelimit";
+import crypto from "crypto";
 import { z } from "zod";
 
 export const dynamic = "force-dynamic";
@@ -14,9 +15,30 @@ const telegramUpdateSchema = z.object({
 export async function POST(request: Request) {
   const obs = obsStart(request, "/api/telegram/webhook");
   const secret = env.TELEGRAM_WEBHOOK_SECRET;
+  if (process.env.NODE_ENV === "production" && !secret) {
+    console.error(
+      JSON.stringify({
+        ts: new Date().toISOString(),
+        type: "telegram.webhook.misconfig",
+        message: "TELEGRAM_WEBHOOK_SECRET is required in production",
+        route: obs.route,
+        requestId: obs.requestId,
+      }),
+    );
+    return jsonErr("Server misconfigured: TELEGRAM_WEBHOOK_SECRET is required in production", {
+      status: 500,
+      headers: { "x-request-id": obs.requestId },
+    });
+  }
+
   if (secret) {
     const header = request.headers.get("x-telegram-bot-api-secret-token");
-    if (!header || header !== secret) return jsonErr("Invalid webhook secret", { status: 401, headers: { "x-request-id": obs.requestId } });
+    if (!header) return jsonErr("Invalid webhook secret", { status: 401, headers: { "x-request-id": obs.requestId } });
+
+    const secretBuf = Buffer.from(secret);
+    const headerBuf = Buffer.from(header);
+    const ok = secretBuf.length === headerBuf.length && crypto.timingSafeEqual(secretBuf, headerBuf);
+    if (!ok) return jsonErr("Invalid webhook secret", { status: 401, headers: { "x-request-id": obs.requestId } });
   }
 
   try {
