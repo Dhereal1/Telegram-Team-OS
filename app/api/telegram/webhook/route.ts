@@ -18,6 +18,9 @@ import { handleApprove } from "@/lib/telegram/commands/handlers/approve";
 import { handleRemove } from "@/lib/telegram/commands/handlers/remove";
 import { handleMyTasks } from "@/lib/telegram/commands/handlers/mytasks";
 import { handleSummary } from "@/lib/telegram/commands/handlers/summary";
+import { handleSetRole } from "@/lib/telegram/commands/handlers/setrole";
+import { handleOverdue } from "@/lib/telegram/commands/handlers/overdue";
+import { handleStatus } from "@/lib/telegram/commands/handlers/status";
 
 export const dynamic = "force-dynamic";
 
@@ -143,9 +146,12 @@ export async function POST(request: Request) {
         else if (cmd.command === "tasks") out = await handleTasks(ctx);
         else if (cmd.command === "mytasks") out = await handleMyTasks(ctx);
         else if (cmd.command === "done") out = await handleDone(ctx);
+        else if (cmd.command === "overdue") out = await handleOverdue(ctx);
         else if (cmd.command === "help") out = await handleHelp(ctx);
         else if (cmd.command === "approve") out = await handleApprove(ctx);
         else if (cmd.command === "remove") out = await handleRemove(ctx);
+        else if (cmd.command === "setrole") out = await handleSetRole(ctx);
+        else if (cmd.command === "status") out = await handleStatus(ctx);
         else if (cmd.command === "summary") out = await handleSummary(ctx);
         else out = "Unknown command. Use /help to see available commands.";
 
@@ -159,6 +165,11 @@ export async function POST(request: Request) {
             message: e instanceof Error ? e.message : "Command processing error",
           }),
         );
+        try {
+          await sendMessage(chatId, "An error occurred. Please try again.");
+        } catch {
+          // ignore
+        }
       }
     })();
 

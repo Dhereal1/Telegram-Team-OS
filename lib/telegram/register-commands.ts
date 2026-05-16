@@ -15,8 +15,11 @@ export async function registerBotCommands() {
     { command: "tasks", description: "View open tasks" },
     { command: "mytasks", description: "View your assigned tasks" },
     { command: "done", description: "Mark a task done: /done taskId" },
+    { command: "overdue", description: "List overdue tasks (admin only)" },
     { command: "approve", description: "Approve a pending member: /approve @user" },
     { command: "remove", description: "Remove a member: /remove @user" },
+    { command: "setrole", description: "Change member role: /setrole @user admin|member" },
+    { command: "status", description: "Post a quick status update" },
     { command: "summary", description: "Team performance summary (admin only)" },
     { command: "help", description: "Show available commands" },
   ];

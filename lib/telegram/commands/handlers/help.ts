@@ -14,18 +14,28 @@ export async function handleHelp(ctx: CommandContext): Promise<string> {
   });
 
   const admin = Boolean(membership?.isActive && isAdminRole(membership.role.key));
+  const founder = Boolean(membership?.isActive && membership.role.key === "FOUNDER");
 
-  const lines = [
-    "Available commands:",
-    "/tasks — List open tasks",
-    "/report <text> — Submit your daily report",
-    "/help — Show this help",
-  ];
+  const lines: string[] = ["Available commands:"];
+
+  lines.push("/start ws_<token> — Link this group (use dashboard invite link)");
 
   if (admin) {
-    lines.splice(1, 0, "/assign @username <task> [due:YYYY-MM-DD] — Assign a task");
-    lines.splice(2, 0, "/done <taskId> — Mark a task as done");
+    lines.push("/assign @username <task> [due:YYYY-MM-DD] — Assign a task");
+    lines.push("/done <taskId> — Mark a task as done");
+    lines.push("/overdue — List overdue tasks");
+    lines.push("/approve @username — Approve a pending member");
+    lines.push("/remove @username — Remove a member");
   }
+
+  if (founder) lines.push("/setrole @username admin|member — Change a member role");
+
+  lines.push("/tasks — List open tasks");
+  lines.push("/mytasks — List your open tasks");
+  lines.push("/report <text> — Submit your daily report");
+  lines.push("/status <text> — Post a quick status update");
+  if (admin) lines.push("/summary — Team summary (admin only)");
+  lines.push("/help — Show this help");
 
   return lines.join("\n");
 }
