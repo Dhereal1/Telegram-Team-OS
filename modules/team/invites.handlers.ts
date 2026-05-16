@@ -10,6 +10,7 @@ import { z } from "zod";
 import { HttpError } from "@/packages/core/http-error";
 import * as invitesService from "@/modules/team/invites.service";
 import * as invitesRepo from "@/modules/team/invites.repository";
+import { env } from "@/lib/env";
 
 const createInviteSchema = z.object({
   roleKey: z.enum(["ADMIN", "STAFF"]).default("STAFF"),
@@ -50,9 +51,12 @@ export const invitesPOST = withApi(async (request) => {
     const idem = await beginIdempotency({ request, teamId: session.teamId!, route: "/api/team/invites:POST" });
     const body = createInviteSchema.parse(await request.json());
     const invite = await invitesService.createInvite({ teamId: session.teamId!, createdById: session.userId, roleKey: body.roleKey });
+    const username = env.TELEGRAM_BOT_USERNAME ?? process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME;
+    if (!username) throw new HttpError("TELEGRAM_BOT_USERNAME is required", 500, "MISCONFIGURED");
+    const deepLink = `https://t.me/${username}?start=ws_${invite.token}`;
     await finishIdempotency({ redisKey: idem?.redisKey ?? null, result: { invite } });
     obsEnd(obs, 201);
-    return jsonOk({ invite }, { status: 201, headers: { "x-request-id": obs.requestId } });
+    return jsonOk({ invite, deepLink }, { status: 201, headers: { "x-request-id": obs.requestId } });
   } catch (e: unknown) {
     obsError(obs, e);
     if (e instanceof HttpError) return jsonErr(e.message, { status: e.status, code: e.code, headers: { "x-request-id": obs.requestId } });

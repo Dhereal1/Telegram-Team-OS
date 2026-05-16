@@ -1,8 +1,7 @@
 import "server-only";
 
 import { prisma } from "@/lib/db/prisma";
-
-export type CommandContext = { teamId: string; actorUserId: string; args: string[]; chatId: bigint };
+import type { CommandContext } from "@/lib/telegram/commands/handlers/types";
 
 function formatDue(dueAt: Date) {
   return dueAt.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
@@ -35,4 +34,3 @@ export async function handleTasks(ctx: CommandContext): Promise<string> {
 
   return lines.join("\n");
 }
-

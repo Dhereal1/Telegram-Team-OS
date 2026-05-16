@@ -2,8 +2,7 @@ import "server-only";
 
 import { prisma } from "@/lib/db/prisma";
 import { notificationsQueue } from "@/lib/queues";
-
-export type CommandContext = { teamId: string; actorUserId: string; args: string[]; chatId: bigint };
+import type { CommandContext } from "@/lib/telegram/commands/handlers/types";
 
 function normalizeUsername(input: string) {
   return input.replace(/^@/, "").trim().toLowerCase();

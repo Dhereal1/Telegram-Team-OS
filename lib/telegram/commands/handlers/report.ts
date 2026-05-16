@@ -1,8 +1,7 @@
 import "server-only";
 
 import { prisma } from "@/lib/db/prisma";
-
-export type CommandContext = { teamId: string; actorUserId: string; args: string[]; chatId: bigint };
+import type { CommandContext } from "@/lib/telegram/commands/handlers/types";
 
 export async function handleReport(ctx: CommandContext): Promise<string> {
   const body = ctx.args.join(" ").trim();

@@ -12,6 +12,7 @@ import { handleReport } from "@/lib/telegram/commands/handlers/report";
 import { handleTasks } from "@/lib/telegram/commands/handlers/tasks";
 import { handleDone } from "@/lib/telegram/commands/handlers/done";
 import { handleHelp } from "@/lib/telegram/commands/handlers/help";
+import { handleStart } from "@/lib/telegram/commands/handlers/start";
 
 export const dynamic = "force-dynamic";
 
@@ -82,9 +83,25 @@ export async function POST(request: Request) {
 
     const chatId = BigInt(chatIdNum);
     const fromId = BigInt(fromIdNum);
+    const chatType = (update as unknown as { message?: { chat?: { type?: string } } }).message?.chat?.type ?? "unknown";
 
     void (async () => {
       try {
+        // /start is the onboarding entry point and may run before the user is a workspace member.
+        if (cmd.command === "start") {
+          const actor = await prisma.user.findFirst({ where: { telegramId: fromId }, select: { id: true } });
+          const out = await handleStart({
+            teamId: "",
+            actorUserId: actor?.id ?? "",
+            args: cmd.args,
+            chatId,
+            chatType,
+            fromTelegramId: fromId,
+          });
+          await sendMessage(chatId, out);
+          return;
+        }
+
         const team = await prisma.team.findFirst({
           where: { telegramChatId: chatId },
           select: { id: true },
@@ -115,12 +132,13 @@ export async function POST(request: Request) {
           return;
         }
 
-        const ctx = { teamId: team.id, actorUserId: actor.id, args: cmd.args, chatId };
+        const ctx = { teamId: team.id, actorUserId: actor.id, args: cmd.args, chatId, chatType, fromTelegramId: fromId };
 
         let out: string;
         if (cmd.command === "assign") out = await handleAssign(ctx);
         else if (cmd.command === "report") out = await handleReport(ctx);
         else if (cmd.command === "tasks") out = await handleTasks(ctx);
+        else if (cmd.command === "mytasks") out = await handleTasks(ctx);
         else if (cmd.command === "done") out = await handleDone(ctx);
         else if (cmd.command === "help") out = await handleHelp(ctx);
         else out = "Unknown command. Use /help to see available commands.";

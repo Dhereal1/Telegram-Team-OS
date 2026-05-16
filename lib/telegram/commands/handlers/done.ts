@@ -1,8 +1,7 @@
 import "server-only";
 
 import { prisma } from "@/lib/db/prisma";
-
-export type CommandContext = { teamId: string; actorUserId: string; args: string[]; chatId: bigint };
+import type { CommandContext } from "@/lib/telegram/commands/handlers/types";
 
 function isAdminRole(roleKey: string | null | undefined) {
   return roleKey === "ADMIN" || roleKey === "FOUNDER";
@@ -38,4 +37,3 @@ export async function handleDone(ctx: CommandContext): Promise<string> {
 
   return "Task marked as done";
 }
-

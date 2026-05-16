@@ -15,7 +15,7 @@ export async function createInvite(input: {
 }) {
   await ensureDefaultRoles();
   const token = crypto.randomBytes(24).toString("base64url");
-  const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * (input.ttlHours ?? 72));
+  const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * (input.ttlHours ?? 24 * 7));
 
   const invite = await repo.createInvite({
     teamId: input.teamId,

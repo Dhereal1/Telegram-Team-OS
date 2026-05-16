@@ -8,6 +8,9 @@ export const env = createEnv({
   server: {
     DATABASE_URL: z.string().min(1),
     TELEGRAM_BOT_TOKEN: z.string().min(1),
+    // Required for invite deep links and bot command registration in production.
+    // Prefer setting TELEGRAM_BOT_USERNAME; NEXT_PUBLIC_TELEGRAM_BOT_USERNAME can be used as fallback.
+    TELEGRAM_BOT_USERNAME: z.string().min(1).optional(),
     // Required in production to validate Telegram webhook origin.
     TELEGRAM_WEBHOOK_SECRET: z.string().optional(),
     // BullMQ / durable processing (Redis protocol over TCP)
@@ -28,6 +31,7 @@ export const env = createEnv({
   runtimeEnv: {
     DATABASE_URL: process.env.DATABASE_URL,
     TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
+    TELEGRAM_BOT_USERNAME: process.env.TELEGRAM_BOT_USERNAME,
     TELEGRAM_WEBHOOK_SECRET: process.env.TELEGRAM_WEBHOOK_SECRET,
     REDIS_URL: process.env.REDIS_URL,
     REDIS_QUEUE_PREFIX: process.env.REDIS_QUEUE_PREFIX,
